@@ -31,12 +31,8 @@ services:
         value: 0.0.0.0
       - key: CORS_ORIGIN
         value: "*"
-      - key: DODO_PAYMENTS_API_KEY
-        sync: false
       - key: DODO_ENVIRONMENT
         value: live_mode
-      - key: ELEVENLABS_API_KEY
-        sync: false
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 
@@ -63,22 +59,6 @@ services:
         value: "3"
       - key: DB_MAX_OVERFLOW
         value: "6"
-      - key: DODO_PAYMENTS_API_KEY
-        sync: false
-      - key: DODO_ENVIRONMENT
-        value: live_mode
-      - key: ELEVENLABS_API_KEY
-        sync: false
-      - key: ELEVENLABS_VOICE_ID
-        sync: false
-      - key: ELEVENLABS_AGENT_ID
-        sync: false
-      - key: EVM_RPC_URL
-        sync: false
-      - key: EVM_PRIVATE_KEY
-        sync: false
-      - key: EVM_PROOF_CONTRACT_ADDRESS
-        sync: false
 
 databases:
   - name: fleetgrid-db
