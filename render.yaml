@@ -31,8 +31,6 @@ services:
         value: 0.0.0.0
       - key: CORS_ORIGIN
         value: "*"
-      - key: DODO_ENVIRONMENT
-        value: live_mode
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 
