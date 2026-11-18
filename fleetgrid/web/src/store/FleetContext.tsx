@@ -280,7 +280,7 @@ export function useFleet(): FleetContextValue {
 }
 
 function readStoredMode(): Mode | null {
-  if (window.location.pathname === '/verify-email') return 'LOGIN';
+  if (new URLSearchParams(window.location.search).has('token')) return 'LOGIN';
   try {
     const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
     if (
