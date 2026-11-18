@@ -6,6 +6,8 @@
 - Signup requires an email address, a password of at least 10 characters, and contact details.
 - The API sends a 24-hour email-verification link through Resend.
 - A user cannot sign in until the email has been verified.
+- Opening the email link only loads the verification page; the user must explicitly press **Verify email**. The token is consumed by a one-time POST so ordinary link-prefetch scanners do not verify accounts automatically.
+- Public signup, login and verification endpoints have per-process rate limits. Before running multiple API instances, move these limits to a shared gateway or Redis-backed limiter so each instance enforces the same quota.
 - Configure these server environment variables before enabling signup:
   - `RESEND_API_KEY`
   - `EMAIL_FROM` (a sender verified with Resend)
