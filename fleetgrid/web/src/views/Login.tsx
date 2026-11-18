@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useFleet } from '../store/FleetContext';
 import { api } from '../lib/api';
 import { cn } from '../lib/format';
@@ -14,6 +14,21 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get('token');
+    if (!token) return;
+    let active = true;
+    void api.verifyEmail(token).then((result) => {
+      if (active) setNotice(result.message);
+    }).catch((err) => {
+      if (active) setError((err as Error).message);
+    }).finally(() => {
+      // Remove the one-time token from the address bar after attempting verification.
+      window.history.replaceState({}, document.title, window.location.pathname);
+    });
+    return () => { active = false; };
+  }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
