@@ -88,6 +88,7 @@ export const api = {
     truck?: { registrationNo: string; capacityT: number; origin: string; destination: string };
   }) => post<{ ok: true; verificationRequired: true; message: string; email: string }>('/auth/signup', input),
   verifyEmail: (token: string) => request<{ ok: true; message: string }>(`/auth/verify-email?token=${encodeURIComponent(token)}`),
+  resendVerification: (email: string) => post<{ ok: true; message: string }>('/auth/resend-verification', { email }),
 
   /**
    * Self-service onboarding. Returns the same `{ user, organization, driver }` shape
