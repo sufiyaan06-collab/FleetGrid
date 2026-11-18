@@ -41,7 +41,7 @@ export async function ensureSeeded(): Promise<{ seeded: boolean; trucks: number;
   if (existingTrucks.length > 0) {
     return { seeded: false, trucks: existingTrucks.length, shipments: (await db.shipments.get()).length };
   }
-  if (!config.autoSeed && markerExists) {
+  if (!config.autoSeed) {
     return { seeded: false, trucks: 0, shipments: 0 };
   }
   const result = await seedDemoData();
