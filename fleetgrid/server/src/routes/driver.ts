@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { driverOffers } from '../services/shipments.js';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateQuery } from '../middleware/validate.js';
+import { requireRoles } from '../middleware/auth.js';
+import { db } from '../store/db.js';
+import type { User } from '../types.js';
 
 export const driverRouter: Router = Router();
 
@@ -20,10 +23,17 @@ const driverQuerySchema = z.object({
  */
 driverRouter.get(
   '/driver/offers',
+  requireRoles('DRIVER'),
   validateQuery(driverQuerySchema),
   asyncHandler(async (_req, res) => {
-    const query = res.locals.query as z.infer<typeof driverQuerySchema>;
-    const result = await driverOffers(query.driverId);
+    const user = res.locals.authUser as User;
+    const ownDrivers = await db.drivers.find((driver) => driver.userId === user.id);
+    const driver = ownDrivers[0];
+    if (!driver) {
+      res.json({ driver: null, truck: null, pending: [], accepted: [], counts: { pending: 0, accepted: 0 }, note: 'No driver profile is linked to this account yet.' });
+      return;
+    }
+    const result = await driverOffers(driver.id);
     res.json({
       ...result,
       counts: { pending: result.pending.length, accepted: result.accepted.length },
