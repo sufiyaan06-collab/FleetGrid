@@ -32,6 +32,7 @@ const createPlanSchema = z.object({
  */
 recoveryRouter.post(
   '/recovery-plans',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(createPlanSchema),
   asyncHandler(async (req, res) => {
     const { incidentId } = req.body as z.infer<typeof createPlanSchema>;
@@ -79,10 +80,11 @@ const approveSchema = z.object({
 
 recoveryRouter.post(
   '/recovery-plans/:id/approve',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(approveSchema),
   asyncHandler(async (req, res) => {
     const { approvedBy } = req.body as z.infer<typeof approveSchema>;
-    const plan = await approveRecoveryPlan(requiredParam(req, 'id'), approvedBy ?? 'operator_demo');
+    const plan = await approveRecoveryPlan(requiredParam(req, 'id'), process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? approvedBy ?? 'operator_demo' : (res.locals.authUser as { id: string }).id);
     res.json({ ok: true, plan });
   }),
 );
@@ -94,10 +96,11 @@ const rejectSchema = z.object({
 
 recoveryRouter.post(
   '/recovery-plans/:id/reject',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(rejectSchema),
   asyncHandler(async (req, res) => {
     const { rejectedBy, reason } = req.body as z.infer<typeof rejectSchema>;
-    const plan = await rejectRecoveryPlan(requiredParam(req, 'id'), rejectedBy ?? 'operator_demo', reason);
+    const plan = await rejectRecoveryPlan(requiredParam(req, 'id'), process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? rejectedBy ?? 'operator_demo' : (res.locals.authUser as { id: string }).id, reason);
     res.json({ ok: true, plan });
   }),
 );
@@ -108,10 +111,11 @@ const executeSchema = z.object({
 
 recoveryRouter.post(
   '/recovery-plans/:id/execute',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(executeSchema),
   asyncHandler(async (req, res) => {
     const { executedBy } = req.body as z.infer<typeof executeSchema>;
-    const result = await executeRecoveryPlan(requiredParam(req, 'id'), executedBy ?? 'operator_demo');
+    const result = await executeRecoveryPlan(requiredParam(req, 'id'), process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? executedBy ?? 'operator_demo' : (res.locals.authUser as { id: string }).id);
     res.json({ ok: true, ...result });
   }),
 );
