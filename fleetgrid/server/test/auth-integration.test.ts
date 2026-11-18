@@ -74,11 +74,17 @@ try {
 
   const opsSignup = await request('/auth/signup', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ role: 'BUSINESS', name: 'Ops Attempt', email: 'ops@example.test', password, contact: '1234567890' }),
+    body: JSON.stringify({ role: 'CONTROL_TOWER', name: 'Ops Attempt', email: 'ops@example.test', password, contact: '1234567890' }),
   });
-  assert.equal(opsSignup.status, 503, 'signup is unavailable without configured email delivery');
+  assert.equal(opsSignup.status, 400, 'operations roles cannot self-register');
+
+  const unavailableEmailSignup = await request('/auth/signup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ role: 'BUSINESS', name: 'Shipper Attempt', email: 'new@example.test', password, contact: '1234567890' }),
+  });
+  assert.equal(unavailableEmailSignup.status, 503, 'signup is unavailable without configured email delivery');
   const storedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
-  assert.equal(storedAccounts.length, 3, 'failed signup must not create an auth account');
+  assert.equal(storedAccounts.length, 3, 'rejected signup attempts must not create auth accounts');
 
   const invalidLogin = await request('/auth/login', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -99,6 +105,17 @@ try {
   const stateB = await shipperB.json() as { shipments: Array<{ id: string }> };
   assert.deepEqual(stateB.shipments.map((s) => s.id), ['shipment_b'], 'second shipper cannot see first shipper records');
 
+  const crossShipperDetail = await request('/shipments/shipment_b', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  assert.equal(crossShipperDetail.status, 404, 'shipper cannot open another shipper shipment by ID');
+
+  const driverCrossShipperDetail = await request('/shipments/shipment_a', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(driverCrossShipperDetail.status, 404, 'driver cannot open an unassigned shipment by ID');
+  const driverRecoveryWrite = await request('/recovery-plans', {
+    method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ incidentId: 'incident_private' }),
+  });
+  assert.equal(driverRecoveryWrite.status, 403, 'driver cannot create operations recovery plans');
+
   const driverPayments = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(driverPayments.status, 200);
   const paymentData = await driverPayments.json() as { payments: unknown[] };
@@ -112,7 +129,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, failed signup, login rejection, shipper isolation, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, login rejection, cross-account shipment isolation, role restrictions, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
