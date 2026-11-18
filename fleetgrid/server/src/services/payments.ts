@@ -44,43 +44,51 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
     const amount = Math.round(input.amount);
     const apiKey = process.env.DODO_PAYMENTS_API_KEY;
 
-    let checkoutUrl = `https://checkout.dodopayments.com/pay/ch_dodo_${paymentId}`;
-    let providerReference = `dodo_ref_${paymentId}`;
-    let isSandbox = true;
-
-    if (apiKey && apiKey.trim().length > 5) {
-      try {
-        const client = new DodoPayments({
-          bearerToken: apiKey,
-          environment: (process.env.DODO_ENVIRONMENT as 'test_mode' | 'live_mode') || 'test_mode',
-        });
-
-        const session = await client.checkoutSessions.create({
-          product_cart: [
-            {
-              product_id: process.env.DODO_PRODUCT_ID || 'prod_fleetgrid_freight',
-              quantity: 1,
-              amount: amount * 100, // Dodo accepts smallest currency unit (paise/cents)
-            },
-          ],
-          return_url: input.returnUrl || `${process.env.FRONTEND_ORIGIN || 'http://localhost:5173'}?payment=success&id=${paymentId}`,
-          customer: {
-            email: input.customerEmail || 'shipper@fleetgrid.io',
-            name: input.customerName || 'FleetGrid Shipper',
-          },
-        });
-
-        if (session.checkout_url) {
-          checkoutUrl = session.checkout_url;
-          isSandbox = false;
-        }
-        if (session.session_id) {
-          providerReference = session.session_id;
-        }
-      } catch (err) {
-        console.warn('[DodoPayments] API session creation failed, using sandbox fallback:', (err as Error).message);
-      }
+    if (!apiKey || apiKey.trim().length <= 5) {
+      throw ApiError.notImplemented(
+        'Dodo Payments is not configured. Add a valid DODO_PAYMENTS_API_KEY in the server environment before accepting payments.',
+      );
     }
+
+    if (!input.customerEmail || !input.customerName) {
+      throw ApiError.badRequest('A real customer name and billing email are required to create a payment session.');
+    }
+
+    const client = new DodoPayments({
+      bearerToken: apiKey,
+      environment: (process.env.DODO_ENVIRONMENT as 'test_mode' | 'live_mode') || 'test_mode',
+    });
+
+    let session;
+    try {
+      session = await client.checkoutSessions.create({
+        product_cart: [
+          {
+            product_id: process.env.DODO_PRODUCT_ID || 'prod_fleetgrid_freight',
+            quantity: 1,
+            amount: amount * 100,
+          },
+        ],
+        return_url: input.returnUrl || `${process.env.FRONTEND_ORIGIN || 'http://localhost:5173'}?payment=return&id=${paymentId}`,
+        customer: {
+          email: input.customerEmail,
+          name: input.customerName,
+        },
+      });
+    } catch (err) {
+      console.error('[DodoPayments] Checkout session creation failed:', err);
+      throw ApiError.notImplemented(
+        'Dodo Payments could not create a checkout session. Check the API key, product configuration, and Dodo account mode, then try again.',
+      );
+    }
+
+    if (!session.checkout_url || !session.session_id) {
+      throw ApiError.notImplemented('Dodo Payments did not return a valid checkout URL and session reference.');
+    }
+
+    const checkoutUrl = session.checkout_url;
+    const providerReference = session.session_id;
+    const isSandbox = (process.env.DODO_ENVIRONMENT || 'test_mode') === 'test_mode';
 
     const payment: Payment = {
       id: paymentId,
@@ -92,8 +100,8 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
       status: 'PENDING',
       providerReference,
       checkoutUrl,
-      customerName: input.customerName || 'FleetGrid Shipper',
-      customerEmail: input.customerEmail || 'shipper@fleetgrid.io',
+      customerName: input.customerName,
+      customerEmail: input.customerEmail,
       paymentMethod: 'DODO_CHECKOUT',
       createdAt: nowIso(),
       updatedAt: nowIso(),
