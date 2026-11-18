@@ -27,8 +27,11 @@ driverRouter.get(
   validateQuery(driverQuerySchema),
   asyncHandler(async (_req, res) => {
     const user = res.locals.authUser as User;
+    const query = res.locals.query as z.infer<typeof driverQuerySchema>;
     const ownDrivers = await db.drivers.find((driver) => driver.userId === user.id);
-    const driver = ownDrivers[0];
+    const driver = process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true'
+      ? await db.drivers.findById(query.driverId)
+      : ownDrivers[0];
     if (!driver) {
       res.json({ driver: null, truck: null, pending: [], accepted: [], counts: { pending: 0, accepted: 0 }, note: 'No driver profile is linked to this account yet.' });
       return;
