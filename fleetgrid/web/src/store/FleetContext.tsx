@@ -165,7 +165,6 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     }).catch(() => {
       // No valid credential session: leave the user at the public portal selector.
     });
-    void refresh();
     return () => { active = false; };
   }, [refresh]);
 
@@ -191,11 +190,12 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         if (next === 'REGISTER' || next === 'LIVE_MAP' || next === 'PAYMENTS' || next === 'LANDING' || next === 'LOGIN') return;
         const login = await api.demoLogin(next);
         setSession(login);
+        await refresh();
       } catch (err) {
         setError((err as Error).message);
       }
     },
-    [],
+    [refresh],
   );
 
   const adoptAccount = useCallback((next: Mode, account: DemoLoginResponse) => {
@@ -207,7 +207,8 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     }
     setSession(account);
     setError(null);
-  }, []);
+    void refresh();
+  }, [refresh]);
 
   const signOut = useCallback(async () => {
     try {
