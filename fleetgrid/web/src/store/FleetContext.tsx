@@ -70,6 +70,7 @@ interface FleetContextValue {
    */
   adoptAccount: (mode: Mode, session: DemoLoginResponse) => void;
   resetDemo: () => Promise<void>;
+  signOut: () => Promise<void>;
   lastEventLabel: string | null;
 }
 
@@ -208,6 +209,21 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     setError(null);
   }, []);
 
+  const signOut = useCallback(async () => {
+    try {
+      await api.logout();
+    } finally {
+      setSession(null);
+      setModeState('LANDING');
+      setSnapshot(EMPTY_SNAPSHOT);
+      try {
+        window.localStorage.removeItem(MODE_STORAGE_KEY);
+      } catch {
+        /* private mode: ignore */
+      }
+    }
+  }, []);
+
   const resetDemo = useCallback(async () => {
     setLoading(true);
     try {
@@ -240,6 +256,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     setMode,
     adoptAccount,
     resetDemo,
+    signOut,
     lastEventLabel,
   };
 
