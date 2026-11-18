@@ -27,6 +27,9 @@ async function authenticatedSession(userId: string) {
   const user = await db.users.findById(userId);
   if (!user) throw new AuthApiError(401, 'AUTH_REQUIRED', 'Please sign in.');
   const organization = user.organizationId ? await db.organizations.findById(user.organizationId) : undefined;
+  if (!organization || organization.status !== 'ACTIVE') {
+    throw new AuthApiError(403, 'ACCOUNT_DISABLED', 'This organisation is unavailable. Contact FleetGrid Operations.');
+  }
   const drivers = await db.drivers.find((driver) => driver.userId === user.id);
   return {
     ok: true as const,
