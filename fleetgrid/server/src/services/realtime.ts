@@ -27,6 +27,7 @@ const REALTIME_PATH = '/realtime';
 class RealtimeHub {
   private wss: WebSocketServer | null = null;
   private clients = new Map<WebSocket, TrackedClient>();
+  private authenticatedUsers = new WeakMap<WebSocket, User>();
   private heartbeat: NodeJS.Timeout | null = null;
   private counter = 0;
 
@@ -70,12 +71,18 @@ class RealtimeHub {
         }
 
         this.wss?.handleUpgrade(req, socket, head, (ws) => {
-          this.wss?.emit('connection', ws, req, user);
+          this.authenticatedUsers.set(ws, user!);
+          this.wss?.emit('connection', ws, req);
         });
       })().catch(() => socket.destroy());
     });
 
-    this.wss.on('connection', (socket: WebSocket, _req: IncomingMessage, user: User) => {
+    this.wss.on('connection', (socket: WebSocket) => {
+      const user = this.authenticatedUsers.get(socket);
+      if (!user) {
+        socket.close(1008, 'Authentication required');
+        return;
+      }
       this.counter += 1;
       const clientId = `client-${this.counter}`;
       this.clients.set(socket, { socket, alive: true, clientId, user });
