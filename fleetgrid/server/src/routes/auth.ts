@@ -22,6 +22,21 @@ import { ApiError as AuthApiError } from '../lib/errors.js';
 
 export const authRouter: Router = Router();
 
+async function authenticatedSession(userId: string) {
+  const user = await db.users.findById(userId);
+  if (!user) throw new AuthApiError(401, 'AUTH_REQUIRED', 'Please sign in.');
+  const organization = user.organizationId ? await db.organizations.findById(user.organizationId) : undefined;
+  const drivers = await db.drivers.find((driver) => driver.userId === user.id);
+  return {
+    ok: true as const,
+    mode: 'authenticated' as const,
+    user,
+    organization: organization ?? null,
+    driver: drivers[0] ?? null,
+    availableRoles: [user.role],
+  };
+}
+
 const DEMO_ROLES = ['CONTROL_TOWER', 'BUSINESS', 'DRIVER', 'OPERATOR', 'VERIFIER'] as const;
 
 const demoLoginSchema = z.object({
@@ -229,7 +244,7 @@ authRouter.post(
       updatedAt: new Date().toISOString(),
     });
     setSessionCookie(res, session.token);
-    res.json({ ok: true, user });
+    res.json(await authenticatedSession(user.id));
   }),
 );
 
@@ -287,9 +302,8 @@ authRouter.get(
     if (!account || !account.sessionExpiresAt || Date.parse(account.sessionExpiresAt) < Date.now()) {
       throw new AuthApiError(401, 'SESSION_EXPIRED', 'Your session has expired. Please sign in again.');
     }
-    const user = await db.users.findById(account.id);
-    if (!user || !account.emailVerifiedAt) throw new AuthApiError(401, 'AUTH_REQUIRED', 'Please sign in.');
-    res.json({ ok: true, user, email: account.email });
+    if (!account.emailVerifiedAt) throw new AuthApiError(401, 'AUTH_REQUIRED', 'Please sign in.');
+    res.json({ ...(await authenticatedSession(account.id)), email: account.email });
   }),
 );
 
