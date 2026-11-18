@@ -69,7 +69,18 @@ export function readSessionCookie(cookieHeader?: string): string | null {
   return null;
 }
 
+export function assertEmailProviderConfigured(): void {
+  if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM || !process.env.APP_BASE_URL) {
+    throw new ApiError(
+      503,
+      'EMAIL_PROVIDER_NOT_CONFIGURED',
+      'Email verification is not available yet. Configure RESEND_API_KEY, EMAIL_FROM, and APP_BASE_URL before enabling real account registration.',
+    );
+  }
+}
+
 export async function sendVerificationEmail(email: string, token: string): Promise<void> {
+  assertEmailProviderConfigured();
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
   const baseUrl = process.env.APP_BASE_URL;
