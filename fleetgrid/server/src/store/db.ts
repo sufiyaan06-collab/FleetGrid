@@ -1,5 +1,7 @@
+import { Pool } from 'pg';
 import { config } from '../config.js';
 import { createJsonStore, dataFile, type Store } from './jsonStore.js';
+import { createPostgresStore, initializePostgres } from './postgresStore.js';
 import type {
   CapacityOffer,
   Driver,
@@ -32,14 +34,34 @@ export interface Db {
   payments: Store<Payment>;
   events: Store<ShipmentEvent>;
   notifications: Store<Notification>;
+  /** Initializes persistent storage before any collection is accessed. */
+  initialize(): Promise<void>;
+  storage: 'postgresql' | 'json-file';
   snapshot(): Promise<FleetSnapshot>;
 }
 
 function build(dataDir: string): Db {
+  const connectionString = process.env.DATABASE_URL;
+  const pool = connectionString
+    ? new Pool({
+        connectionString,
+        max: 5,
+        ...(process.env.PGSSLMODE === 'require'
+          ? { ssl: { rejectUnauthorized: false } }
+          : {}),
+      })
+    : null;
+
   const store = <T extends { id: string }>(name: string, file: string) =>
-    createJsonStore<T>({ filePath: dataFile(dataDir, file), name });
+    pool
+      ? createPostgresStore<T>(pool, { collection: name })
+      : createJsonStore<T>({ filePath: dataFile(dataDir, file), name });
 
   const db: Db = {
+    storage: pool ? 'postgresql' : 'json-file',
+    async initialize() {
+      if (pool) await initializePostgres(pool);
+    },
     organizations: store<Organization>('organizations', 'organizations.json'),
     users: store<User>('users', 'users.json'),
     drivers: store<Driver>('drivers', 'drivers.json'),
