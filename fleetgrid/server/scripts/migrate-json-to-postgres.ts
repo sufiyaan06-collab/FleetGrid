@@ -91,7 +91,7 @@ try {
   }
 
   if (!apply) {
-    process.stdout.write('DRY RUN ONLY: target table is absent or empty and source data passed validation. No database schema or records were changed. Re-run with --apply to import.\\n');
+    process.stdout.write('DRY RUN ONLY: target table is absent or empty and source data passed validation. No database schema or records were changed. Re-run with --apply to import.\n');
   } else {
     await initializePostgres(pool);
     const client = await pool.connect();
