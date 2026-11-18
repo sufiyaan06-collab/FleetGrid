@@ -18,7 +18,12 @@ if (existsSync(envPath)) {
       const separator = trimmed.indexOf('=');
       if (separator <= 0) continue;
       const key = trimmed.slice(0, separator).trim();
-      const value = trimmed.slice(separator + 1).trim().replace(/^(['"])(.*)\\1$/, '$2');
+      const rawValue = trimmed.slice(separator + 1).trim();
+      const quote = rawValue[0];
+      const value =
+        (quote === "'" || quote === '"') && rawValue.endsWith(quote)
+          ? rawValue.slice(1, -1)
+          : rawValue;
       if (key && process.env[key] === undefined) process.env[key] = value;
     }
   } catch (error) {
