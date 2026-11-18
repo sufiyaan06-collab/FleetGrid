@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashPassword, hashOpaqueToken, issueSessionToken, issueVerificationToken } from '../src/services/authSecurity.js';
+import { Webhook } from 'standardwebhooks';
 
 const dataDir = await mkdtemp(join(tmpdir(), 'fleetgrid-auth-'));
 const port = 4317 + Math.floor(Math.random() * 300);
@@ -30,6 +31,7 @@ const tokenB = issueSessionToken();
 const tokenDriver = issueSessionToken();
 const tokenSuspended = issueSessionToken();
 const verificationToken = issueVerificationToken();
+const webhookSecret = `whsec_${Buffer.from('FleetGrid webhook integration secret').toString('base64')}`;
 const passwordHash = await hashPassword(password);
 const accounts = [
   { id: 'user_a', email: 'a@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenA.tokenHash, sessionExpiresAt: tokenA.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
@@ -53,7 +55,9 @@ for (const [name, rows] of Object.entries({
     { id: 'truck_other', organizationId: 'fleet_a', registrationNo: 'KA01AA0002', capacityT: 5, availableT: 5, status: 'AVAILABLE', lat: 12.9, lng: 77.6, origin: 'C', destination: 'D', departureAt: null, driverId: 'driver_other_profile', createdAt: now },
   ], 'shipments.json': shipments,
   'capacity-offers.json': [], 'incidents.json': [], 'recovery-plans.json': [],
-  'payments.json': [], 'shipment-events.json': [], 'notifications.json': [],
+  'payments.json': [
+    { id: 'payment_a', shipmentId: 'shipment_a', recoveryPlanId: null, provider: 'Dodo Payments', amount: 100, currency: 'INR', status: 'PENDING', providerReference: 'session_a', providerPaymentId: null, checkoutUrl: 'https://checkout.example.test/session_a', customerName: 'Shipper A User', customerEmail: 'a@example.test', paymentMethod: 'DODO_CHECKOUT', createdAt: now, updatedAt: now },
+  ], 'shipment-events.json': [], 'notifications.json': [],
 })) {
   await writeFile(join(dataDir, name), JSON.stringify(rows), 'utf8');
 }
@@ -79,7 +83,7 @@ try {
     env: {
       ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir,
       AUTO_SEED: 'false', NODE_ENV: 'test', FLEETGRID_TEST_BYPASS_AUTH: 'false',
-      CORS_ORIGIN: base,
+      CORS_ORIGIN: base, DODO_PAYMENTS_WEBHOOK_KEY: webhookSecret,
     },
     stdio: 'ignore',
   });
@@ -229,6 +233,57 @@ try {
   });
   assert.equal(driverProofAnchor.status, 403, 'drivers cannot invoke operations blockchain proof anchoring');
 
+
+  const webhookPayload = JSON.stringify({
+    business_id: 'dodo_test_business',
+    data: {
+      payment_id: 'dodo_payment_001',
+      checkout_session_id: 'session_a',
+      currency: 'INR',
+      payment_method: 'upi',
+      status: 'succeeded',
+    },
+    timestamp: now,
+    type: 'payment.succeeded',
+  });
+  const webhookId = 'msg_fleetgrid_test_001';
+  const webhookTimestamp = String(Math.floor(Date.now() / 1000));
+  const signer = new Webhook(webhookSecret);
+  const webhookSignature = signer.sign(webhookId, new Date(Number(webhookTimestamp) * 1000), webhookPayload);
+  const invalidWebhook = await request('/payments/dodo/webhook', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'webhook-id': webhookId,
+      'webhook-timestamp': webhookTimestamp,
+      'webhook-signature': 'v1,invalid-signature',
+    },
+    body: webhookPayload,
+  });
+  assert.equal(invalidWebhook.status, 401, 'unsigned or forged Dodo webhook cannot settle a payment');
+  const validWebhookRequest = {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'webhook-id': webhookId,
+      'webhook-timestamp': webhookTimestamp,
+      'webhook-signature': webhookSignature,
+    },
+    body: webhookPayload,
+  } satisfies RequestInit;
+  const validWebhook = await request('/payments/dodo/webhook', validWebhookRequest);
+  assert.equal(validWebhook.status, 200, 'valid signed Dodo payment webhook is accepted without a user session');
+  const paymentListAfterWebhook = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const paymentListData = await paymentListAfterWebhook.json() as { payments: Array<{ id: string; status: string; providerPaymentId?: string | null }> };
+  const settledPayment = paymentListData.payments.find((payment) => payment.id === 'payment_a');
+  assert.equal(settledPayment?.status, 'PAID', 'verified provider webhook settles the matching local payment');
+  assert.equal(settledPayment?.providerPaymentId, 'dodo_payment_001', 'provider payment id is stored separately from the checkout session id');
+  const duplicateWebhook = await request('/payments/dodo/webhook', validWebhookRequest);
+  assert.equal(duplicateWebhook.status, 200, 'duplicate signed webhook is acknowledged idempotently');
+  const stateAfterPayment = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const stateAfterPaymentData = await stateAfterPayment.json() as { shipments: Array<{ id: string; status: string }> };
+  assert.equal(stateAfterPaymentData.shipments.find((shipment) => shipment.id === 'shipment_a')?.status, 'DRAFT', 'payment settlement does not bypass driver shipment acceptance');
+
   const driverPayments = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(driverPayments.status, 200);
   const paymentData = await driverPayments.json() as { payments: unknown[] };
@@ -242,7 +297,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, recovery preview and immutable event-log restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, recovery preview and immutable event-log restrictions, role restrictions, signed Dodo webhook verification and idempotent settlement, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
