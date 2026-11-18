@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hashPassword, hashOpaqueToken, issueSessionToken } from '../src/services/authSecurity.js';
+import { hashPassword, hashOpaqueToken, issueSessionToken, issueVerificationToken } from '../src/services/authSecurity.js';
 
 const dataDir = await mkdtemp(join(tmpdir(), 'fleetgrid-auth-'));
 const port = 4317 + Math.floor(Math.random() * 300);
@@ -15,6 +15,7 @@ const orgs = [
   { id: 'shipper_b', name: 'Shipper B', type: 'SHIPPER', status: 'ACTIVE', createdAt: now },
   { id: 'fleet_a', name: 'Fleet A', type: 'FLEET_OPERATOR', status: 'ACTIVE', createdAt: now },
   { id: 'suspended_org', name: 'Suspended Shipper', type: 'SHIPPER', status: 'SUSPENDED', createdAt: now },
+  { id: 'verify_org', name: 'Verification Shipper', type: 'SHIPPER', status: 'ACTIVE', createdAt: now },
 ];
 const users = [
   { id: 'user_a', name: 'Shipper A User', role: 'BUSINESS', organizationId: 'shipper_a', contact: 'a@example.test', createdAt: now },
@@ -22,17 +23,20 @@ const users = [
   { id: 'driver_user', name: 'Driver User', role: 'DRIVER', organizationId: 'fleet_a', contact: 'driver@example.test', createdAt: now },
   { id: 'driver_other', name: 'Other Driver', role: 'DRIVER', organizationId: 'fleet_a', contact: 'other-driver@example.test', createdAt: now },
   { id: 'suspended_user', name: 'Suspended User', role: 'BUSINESS', organizationId: 'suspended_org', contact: 'suspended@example.test', createdAt: now },
+  { id: 'verify_user', name: 'Verify User', role: 'BUSINESS', organizationId: 'verify_org', contact: 'verify@example.test', createdAt: now },
 ];
 const tokenA = issueSessionToken();
 const tokenB = issueSessionToken();
 const tokenDriver = issueSessionToken();
 const tokenSuspended = issueSessionToken();
+const verificationToken = issueVerificationToken();
 const passwordHash = await hashPassword(password);
 const accounts = [
   { id: 'user_a', email: 'a@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenA.tokenHash, sessionExpiresAt: tokenA.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
   { id: 'user_b', email: 'b@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenB.tokenHash, sessionExpiresAt: tokenB.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
   { id: 'driver_user', email: 'driver@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenDriver.tokenHash, sessionExpiresAt: tokenDriver.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
   { id: 'suspended_user', email: 'suspended@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenSuspended.tokenHash, sessionExpiresAt: tokenSuspended.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
+  { id: 'verify_user', email: 'verify@example.test', passwordHash, emailVerifiedAt: null, verificationTokenHash: verificationToken.tokenHash, verificationExpiresAt: verificationToken.expiresAt, sessionTokenHash: null, sessionExpiresAt: null, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
 ];
 const shipments = [
   { id: 'shipment_a', reference: 'A-001', cargoName: 'Private cargo A', shipperId: 'shipper_a', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
@@ -83,6 +87,21 @@ try {
 
   const anonymous = await request('/state');
   assert.equal(anonymous.status, 401, 'operational state requires a session');
+  const verificationPrefetch = await request(`/auth/verify-email?token=${encodeURIComponent(verificationToken.token)}`);
+  assert.equal(verificationPrefetch.status, 401, 'a GET link prefetch cannot consume an email verification token');
+  const explicitVerification = await request('/auth/verify-email', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: verificationToken.token }),
+  });
+  assert.equal(explicitVerification.status, 200, 'email verification succeeds only after explicit POST');
+  const verificationReplay = await request('/auth/verify-email', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: verificationToken.token }),
+  });
+  assert.equal(verificationReplay.status, 400, 'email verification token is single use');
+
   const suspendedState = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenSuspended.token}` } });
   assert.equal(suspendedState.status, 403, 'suspended organisations cannot access operational APIs');
   const suspendedSession = await request('/auth/me', { headers: { cookie: `fleetgrid_session=${tokenSuspended.token}` } });
@@ -101,7 +120,7 @@ try {
   });
   assert.equal(unavailableEmailSignup.status, 503, 'signup is unavailable without configured email delivery');
   const storedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
-  assert.equal(storedAccounts.length, 4, 'rejected signup attempts must not create auth accounts');
+  assert.equal(storedAccounts.length, 5, 'rejected signup attempts must not create auth accounts');
   const resendPayload = { email: 'verify-limit@example.test' };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const resend = await request('/auth/resend-verification', {
@@ -218,7 +237,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, immutable event-log write restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, immutable event-log write restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
