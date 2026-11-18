@@ -4,6 +4,7 @@ import { db } from '../store/db.js';
 import { ApiError } from '../lib/errors.js';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
+import { authRateLimit, emailIdentity } from '../middleware/rateLimit.js';
 import { register } from '../services/registration.js';
 import type { AuthAccount, Role } from '../types.js';
 import {
@@ -161,6 +162,7 @@ const secureRegisterSchema = z.object({
 authRouter.post(
   '/auth/signup',
   validateBody(secureRegisterSchema),
+  authRateLimit({ windowMs: 60 * 60 * 1000, max: 20, identityMax: 5, message: 'Too many signup attempts. Please try again later.', identity: emailIdentity }),
   asyncHandler(async (req, res) => {
     assertEmailProviderConfigured();
     const body = req.body as z.infer<typeof secureRegisterSchema>;
@@ -213,6 +215,7 @@ const credentialSchema = z.object({
 authRouter.post(
   '/auth/login',
   validateBody(credentialSchema),
+  authRateLimit({ windowMs: 15 * 60 * 1000, max: 40, identityMax: 8, message: 'Too many sign-in attempts. Please wait before trying again.', identity: emailIdentity }),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof credentialSchema>;
     const email = body.email.trim().toLowerCase();
@@ -258,6 +261,7 @@ authRouter.post(
 
 authRouter.get(
   '/auth/verify-email',
+  authRateLimit({ windowMs: 60 * 60 * 1000, max: 20, message: 'Too many verification attempts. Please try again later.' }),
   asyncHandler(async (req, res) => {
     const token = typeof req.query.token === 'string' ? req.query.token : '';
     if (!token) throw AuthApiError.badRequest('Verification token is required.');
@@ -280,6 +284,7 @@ authRouter.get(
 authRouter.post(
   '/auth/resend-verification',
   validateBody(z.object({ email: z.string().email().max(254) })),
+  authRateLimit({ windowMs: 60 * 60 * 1000, max: 20, identityMax: 3, message: 'Too many verification emails requested. Please try again later.', identity: emailIdentity }),
   asyncHandler(async (req, res) => {
     assertEmailProviderConfigured();
     const email = (req.body as { email: string }).email.trim().toLowerCase();
