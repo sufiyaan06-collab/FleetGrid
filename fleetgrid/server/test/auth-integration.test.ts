@@ -93,6 +93,23 @@ try {
   assert.equal(unavailableEmailSignup.status, 503, 'signup is unavailable without configured email delivery');
   const storedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(storedAccounts.length, 3, 'rejected signup attempts must not create auth accounts');
+  const resendPayload = { email: 'verify-limit@example.test' };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const resend = await request('/auth/resend-verification', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(resendPayload),
+    });
+    assert.equal(resend.status, 503, 'email resend reports missing provider before rate limit is reached');
+  }
+  const limitedResend = await request('/auth/resend-verification', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(resendPayload),
+  });
+  assert.equal(limitedResend.status, 429, 'repeated verification email requests are rate limited per account');
+  assert.ok(Number(limitedResend.headers.get('retry-after')) > 0, 'rate-limited response includes Retry-After');
+
 
   const invalidLogin = await request('/auth/login', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -162,7 +179,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, login rejection, cross-account shipment isolation, driver account and truck isolation, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, login rejection, cross-account shipment isolation, driver account and truck isolation, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
