@@ -157,13 +157,22 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       };
       setSession(restored);
       setModeState(nextMode);
+      void refresh();
       try {
         window.localStorage.setItem(MODE_STORAGE_KEY, nextMode);
       } catch {
         /* private mode: ignore */
       }
     }).catch(() => {
-      // No valid credential session: leave the user at the public portal selector.
+      // No valid credential session: never reopen a stale locally remembered role.
+      if (!active) return;
+      setModeState('LANDING');
+      setSession(null);
+      try {
+        window.localStorage.removeItem(MODE_STORAGE_KEY);
+      } catch {
+        /* private mode: ignore */
+      }
     });
     return () => { active = false; };
   }, [refresh]);
