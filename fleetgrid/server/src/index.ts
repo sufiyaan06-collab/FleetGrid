@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import cors from 'cors';
 import express from 'express';
 import { config, serverRoot } from './config.js';
+import { db } from './store/db.js';
 import { ensureSeeded } from './services/demo.js';
 import { hub } from './services/realtime.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
@@ -107,6 +108,9 @@ async function main(): Promise<void> {
   const app = createApp();
   const server = createServer(app);
   hub.attach(server);
+
+  await db.initialize();
+  console.log(`[fleetgrid] storage ${db.storage}`);
 
   const seed = await ensureSeeded();
   if (seed.seeded) {
