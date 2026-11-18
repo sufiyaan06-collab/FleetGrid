@@ -15,8 +15,13 @@ export function createApp(): express.Express {
 
   app.use(
     cors({
-      origin: config.corsOrigins.includes('*') ? true : config.corsOrigins,
-      credentials: false,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (config.corsOrigins.includes('*') && process.env.NODE_ENV !== 'production') return callback(null, true);
+        if (config.corsOrigins.includes(origin)) return callback(null, true);
+        return callback(null, false);
+      },
+      credentials: true,
     }),
   );
   app.use(express.json({ limit: '256kb' }));
