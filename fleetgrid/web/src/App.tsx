@@ -4,6 +4,7 @@ import { LiveMapView } from './views/LiveMapView';
 import { Business } from './views/Business';
 import { Driver } from './views/Driver';
 import { LandingView } from './views/LandingView';
+import { PaymentsView } from './views/PaymentsView';
 import { Register } from './views/Register';
 import { RoleSelect } from './views/RoleSelect';
 
@@ -13,6 +14,7 @@ function Router() {
   if (mode === 'REGISTER') return <Register />;
   if (mode === 'CONTROL_TOWER') return <ControlTower />;
   if (mode === 'LIVE_MAP') return <LiveMapView />;
+  if (mode === 'PAYMENTS') return <PaymentsView />;
   if (mode === 'BUSINESS') return <Business />;
   if (mode === 'DRIVER') return <Driver />;
   return <RoleSelect />;
