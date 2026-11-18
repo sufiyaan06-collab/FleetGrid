@@ -162,6 +162,10 @@ authRouter.post(
     const existing = await db.authAccounts.find((account) => account.email === email);
     if (existing.length) throw AuthApiError.conflict('An account with this email already exists.');
 
+    const verification = issueVerificationToken();
+    // Send before creating domain records: a provider outage must not leave an
+    // account that exists but can never receive its verification link.
+    await sendVerificationEmail(email, verification.token);
     const result = await register({
       role: body.role,
       name: body.name,
@@ -169,7 +173,6 @@ authRouter.post(
       organizationName: body.organizationName ?? null,
       truck: body.truck ?? null,
     });
-    const verification = issueVerificationToken();
     const timestamp = new Date().toISOString();
     const account: AuthAccount = {
       id: result.user.id,
@@ -186,7 +189,6 @@ authRouter.post(
       updatedAt: timestamp,
     };
     await db.authAccounts.create(account);
-    await sendVerificationEmail(email, verification.token);
 
     res.status(202).json({
       ok: true,
