@@ -25,8 +25,9 @@ export interface DodoCheckoutResult {
 
 /**
  * Creates a Dodo Payments checkout session.
- * Uses real Dodo Payments API when DODO_PAYMENTS_API_KEY is configured in the environment.
- * If not set, creates a high-fidelity interactive sandbox checkout session.
+ * Uses the real Dodo Payments API only when API credentials, product configuration,
+ * signed webhook verification, and the explicit checkout-enable switch are configured.
+ * There is no simulated or fabricated checkout fallback.
  */
 export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promise<DodoCheckoutResult> {
   return runExclusive(async () => {
