@@ -5,6 +5,7 @@ import { recordEvent } from '../services/events.js';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { ApiError } from '../lib/errors.js';
+import { requireRoles } from '../middleware/auth.js';
 import type { User } from '../types.js';
 
 export const eventsRouter: Router = Router();
@@ -26,6 +27,7 @@ const recordEventSchema = z.object({
 /** POST /events — append an event to the immutable log. */
 eventsRouter.post(
   '/events',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(recordEventSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof recordEventSchema>;
