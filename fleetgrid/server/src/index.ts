@@ -24,7 +24,15 @@ export function createApp(): express.Express {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: '256kb' }));
+  app.use(express.json({
+    limit: '256kb',
+    verify: (req, _res, buffer) => {
+      // Dodo signs the exact request bytes. Preserve the raw body before JSON parsing.
+      if (req.url?.split('?')[0] === '/payments/dodo/webhook') {
+        Object.assign(req, { rawBody: buffer.toString('utf8') });
+      }
+    },
+  }));
 
   const webDist = resolve(serverRoot, '../web/dist');
   const hasWeb = existsSync(webDist);
