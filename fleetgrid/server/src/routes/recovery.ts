@@ -12,8 +12,12 @@ import {
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
+import { requireRoles } from '../middleware/auth.js';
 
 export const recoveryRouter: Router = Router();
+
+// Recovery plans change fleet-wide assignments and require an operations role.
+recoveryRouter.use(requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'));
 
 const createPlanSchema = z.object({
   incidentId: z.string().min(2),
