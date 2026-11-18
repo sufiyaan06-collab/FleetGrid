@@ -13,7 +13,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx test/auth-security.test.ts && tsx test/flow.test.ts && tsx test/auth-integration.test.ts",
     "reset": "node ../scripts/reset.mjs",
-    "provision:ops": "tsx scripts/provision-ops.ts"
+    "provision:ops": "tsx scripts/provision-ops.ts",
+    "migrate:postgres": "tsx scripts/migrate-json-to-postgres.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
