@@ -145,14 +145,21 @@ trucksRouter.post(
     const { driverId } = req.body as { driverId?: string | null };
     const id = requiredParam(req, 'id');
     const user = res.locals.authUser as User;
-    let actingDriverId = driverId ?? null;
-    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
-      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
-      const truck = await db.trucks.findById(id);
-      if (!driver || !truck || driver.assignedTruckId !== truck.id) throw ApiError.notFound('Truck not found.');
-      actingDriverId = driver.id;
+    let actorId = driverId ?? null;
+    let actorType: 'DRIVER' | 'OPERATOR' = 'DRIVER';
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      if (user.role === 'DRIVER') {
+        const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+        const truck = await db.trucks.findById(id);
+        if (!driver || !truck || driver.assignedTruckId !== truck.id) throw ApiError.notFound('Truck not found.');
+        actorId = driver.id;
+      } else {
+        // Operations identity comes from the authenticated session, never the request body.
+        actorId = user.id;
+        actorType = 'OPERATOR';
+      }
     }
-    const result = await departTruck(id, actingDriverId);
+    const result = await departTruck(id, actorId, actorType);
     res.json({
       ok: true,
       truck: result.truck,
