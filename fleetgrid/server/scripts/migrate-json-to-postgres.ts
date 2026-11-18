@@ -78,17 +78,22 @@ const pool = new Pool({
 });
 
 try {
-  await initializePostgres(pool);
-  const existing = await pool.query<{ count: string }>(
-    'SELECT COUNT(*)::text AS count FROM fleetgrid_records',
+  const tableCheck = await pool.query<{ table_exists: boolean }>(
+    "SELECT to_regclass('public.fleetgrid_records') IS NOT NULL AS table_exists",
   );
-  if (Number(existing.rows[0]?.count ?? 0) > 0) {
-    throw new Error('Target fleetgrid_records table is not empty. Migration stopped without changing existing records.');
+  if (tableCheck.rows[0]?.table_exists) {
+    const existing = await pool.query<{ count: string }>(
+      'SELECT COUNT(*)::text AS count FROM fleetgrid_records',
+    );
+    if (Number(existing.rows[0]?.count ?? 0) > 0) {
+      throw new Error('Target fleetgrid_records table is not empty. Migration stopped without changing existing records.');
+    }
   }
 
   if (!apply) {
-    process.stdout.write('DRY RUN ONLY: target table is empty and source data passed validation. Re-run with --apply to import.\n');
+    process.stdout.write('DRY RUN ONLY: target table is absent or empty and source data passed validation. No database schema or records were changed. Re-run with --apply to import.\\n');
   } else {
+    await initializePostgres(pool);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
