@@ -1,15 +1,89 @@
 import { Router } from 'express';
+import DodoPayments from 'dodopayments';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
-import { createDodoCheckout, getPayment, listPayments } from '../services/payments.js';
+import { confirmDodoPayment, createDodoCheckout, failDodoPayment, getPayment, listPayments } from '../services/payments.js';
 import { db } from '../store/db.js';
-import { requireRoles } from '../middleware/auth.js';
+import { requireAuthenticated, requireRoles } from '../middleware/auth.js';
 import { ApiError } from '../lib/errors.js';
 import type { User } from '../types.js';
 
 export const paymentsRouter: Router = Router();
+
+// Provider callbacks are public only at this route and are authenticated by the
+// Dodo Standard Webhooks signature. All other payment routes require a user session.
+paymentsRouter.post(
+  '/payments/dodo/webhook',
+  asyncHandler(async (req, res) => {
+    const webhookKey = process.env.DODO_PAYMENTS_WEBHOOK_KEY;
+    if (!webhookKey) {
+      res.status(503).json({ error: { code: 'WEBHOOK_NOT_CONFIGURED', message: 'Dodo webhook signature verification is not configured.' } });
+      return;
+    }
+
+    const rawBody = (req as typeof req & { rawBody?: string }).rawBody;
+    if (!rawBody) {
+      res.status(400).json({ error: { code: 'WEBHOOK_RAW_BODY_REQUIRED', message: 'The original signed request body is unavailable.' } });
+      return;
+    }
+
+    const client = new DodoPayments({ webhookKey });
+    let event;
+    try {
+      event = client.webhooks.unwrap(rawBody, {
+        headers: {
+          'webhook-id': req.get('webhook-id') ?? '',
+          'webhook-signature': req.get('webhook-signature') ?? '',
+          'webhook-timestamp': req.get('webhook-timestamp') ?? '',
+        },
+      });
+    } catch {
+      res.status(401).json({ error: { code: 'WEBHOOK_SIGNATURE_INVALID', message: 'Dodo webhook signature is invalid or expired.' } });
+      return;
+    }
+
+    const data = event.data as {
+      checkout_session_id?: string | null;
+      payment_id?: string;
+      payment_method?: string | null;
+      currency?: string;
+    };
+    const sessionId = data.checkout_session_id;
+    if (!sessionId) {
+      res.json({ ok: true, ignored: true, reason: 'No FleetGrid checkout session reference was present.' });
+      return;
+    }
+
+    const matches = await db.payments.find((payment) =>
+      payment.provider === 'Dodo Payments' && payment.providerReference === sessionId,
+    );
+    const payment = matches[0];
+    if (!payment) {
+      // A valid event for another product or an old session is acknowledged but
+      // never allowed to mutate an unrelated FleetGrid payment.
+      res.json({ ok: true, ignored: true });
+      return;
+    }
+
+    if (data.currency && data.currency.toUpperCase() !== payment.currency.toUpperCase()) {
+      console.warn('[DodoPayments] Ignored verified event with currency mismatch for local payment', payment.id);
+      res.json({ ok: true, ignored: true, reason: 'Currency did not match the local checkout.' });
+      return;
+    }
+
+    if (event.type === 'payment.succeeded') {
+      await confirmDodoPayment(payment.id, sessionId, data.payment_method ?? undefined, data.payment_id);
+    } else if (event.type === 'payment.failed' || event.type === 'payment.cancelled') {
+      await failDodoPayment(payment.id, sessionId, event.type);
+    }
+
+    res.status(200).json({ ok: true, received: true });
+  }),
+);
+
+paymentsRouter.use(requireAuthenticated);
 
 const createDodoCheckoutSchema = z.object({
   shipmentId: z.string().min(2).nullish(),
@@ -85,13 +159,3 @@ paymentsRouter.get(
   }),
 );
 
-// Do not trust unsigned webhook payloads. Signature verification must be
-// configured against Dodo's webhook secret before processing any event.
-paymentsRouter.post('/payments/dodo/webhook', (_req, res) => {
-  res.status(503).json({
-    error: {
-      code: 'WEBHOOK_NOT_CONFIGURED',
-      message: 'Dodo webhook signature verification is not configured. No payment status was changed.',
-    },
-  });
-});
