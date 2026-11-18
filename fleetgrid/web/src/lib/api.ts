@@ -33,6 +33,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...init,
+      credentials: 'include',
       headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
     });
   } catch (err) {
@@ -74,6 +75,19 @@ export const api = {
   health: () => request<Record<string, unknown>>('/health'),
   state: () => request<FleetSnapshot>('/state'),
   demoLogin: (role: Role) => post<DemoLoginResponse>('/auth/demo-login', { role }),
+  login: (input: { email: string; password: string }) => post<DemoLoginResponse>('/auth/login', input),
+  me: () => request<{ ok: true; user: DemoLoginResponse['user']; organization: DemoLoginResponse['organization']; driver: DemoLoginResponse['driver']; email: string }>('/auth/me'),
+  logout: () => post<{ ok: true }>('/auth/logout'),
+  signup: (input: {
+    role: 'BUSINESS' | 'DRIVER';
+    name: string;
+    email: string;
+    password: string;
+    contact: string;
+    organizationName?: string;
+    truck?: { registrationNo: string; capacityT: number; origin: string; destination: string };
+  }) => post<{ ok: true; verificationRequired: true; message: string; email: string }>('/auth/signup', input),
+  verifyEmail: (token: string) => request<{ ok: true; message: string }>(`/auth/verify-email?token=${encodeURIComponent(token)}`),
 
   /**
    * Self-service onboarding. Returns the same `{ user, organization, driver }` shape
