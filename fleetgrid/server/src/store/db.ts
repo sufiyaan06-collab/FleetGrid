@@ -36,6 +36,7 @@ export interface Db {
   notifications: Store<Notification>;
   /** Initializes persistent storage before any collection is accessed. */
   initialize(): Promise<void>;
+  close(): Promise<void>;
   storage: 'postgresql' | 'json-file';
   snapshot(): Promise<FleetSnapshot>;
 }
@@ -61,6 +62,9 @@ function build(dataDir: string): Db {
     storage: pool ? 'postgresql' : 'json-file',
     async initialize() {
       if (pool) await initializePostgres(pool);
+    },
+    async close() {
+      if (pool) await pool.end();
     },
     organizations: store<Organization>('organizations', 'organizations.json'),
     users: store<User>('users', 'users.json'),
