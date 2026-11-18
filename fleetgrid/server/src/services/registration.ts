@@ -122,6 +122,7 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
     };
     await db.organizations.create(organization);
 
+    try {
     const user: User = {
       id: newId('usr'),
       name,
@@ -169,5 +170,23 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
     }
 
     return { organization, user, driver, truck };
+    } catch (error) {
+      // Registration spans several collections. If any later write fails, remove
+      // every row created for this new organisation so no partial account remains.
+      const trucks = await db.trucks.find((row) => row.organizationId === organization.id);
+      for (const truck of trucks) {
+        const offers = await db.capacityOffers.find((offer) => offer.truckId === truck.id);
+        const events = await db.events.find((event) => event.truckId === truck.id);
+        for (const offer of offers) await db.capacityOffers.delete(offer.id);
+        for (const event of events) await db.events.delete(event.id);
+        await db.trucks.delete(truck.id);
+      }
+      const drivers = await db.drivers.find((row) => row.organizationId === organization.id);
+      for (const driver of drivers) await db.drivers.delete(driver.id);
+      const users = await db.users.find((row) => row.organizationId === organization.id);
+      for (const user of users) await db.users.delete(user.id);
+      await db.organizations.delete(organization.id);
+      throw error;
+    }
   });
 }
