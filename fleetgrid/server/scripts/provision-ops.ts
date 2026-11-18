@@ -33,6 +33,16 @@ try {
     createdAt: nowIso(),
   };
   const timestamp = nowIso();
+  const operationsOrganization = await db.organizations.findById('fleetgrid_operations');
+  if (!operationsOrganization) {
+    await db.organizations.create({
+      id: 'fleetgrid_operations',
+      name: 'FleetGrid Operations',
+      type: 'FLEET_OPERATOR',
+      status: 'ACTIVE',
+      createdAt: timestamp,
+    });
+  }
   const account: AuthAccount = {
     id: user.id,
     email,
