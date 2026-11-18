@@ -28,19 +28,20 @@ jobs:
           node-version: 20
       - name: Build frontend and backend
         run: npm run build
-      - name: Start API for end-to-end tests
+      - name: Run backend end-to-end tests
         run: |
           npm run dev --prefix fleetgrid/server > /tmp/fleetgrid-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:4000/health; then
-              exit 0
+              npm test
+              exit $?
             fi
             sleep 2
           done
           cat /tmp/fleetgrid-server.log
           exit 1
-      - name: Run backend tests
-        run: npm test
       - name: Show API logs on failure
         if: failure()
         run: cat /tmp/fleetgrid-server.log || true
