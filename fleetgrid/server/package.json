@@ -12,7 +12,8 @@
     "serve": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx test/flow.test.ts",
-    "reset": "node ../scripts/reset.mjs"
+    "reset": "node ../scripts/reset.mjs",
+    "provision:ops": "tsx scripts/provision-ops.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
