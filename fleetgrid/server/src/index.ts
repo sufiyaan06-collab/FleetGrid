@@ -120,12 +120,13 @@ async function main(): Promise<void> {
   server.listen(config.port, config.host, () => {
     console.log(`[fleetgrid] API      http://localhost:${config.port}`);
     console.log(`[fleetgrid] realtime ws://localhost:${config.port}/realtime`);
-    console.log(`[fleetgrid] data dir ${config.dataDir}`);
+    if (db.storage === 'json-file') console.log(`[fleetgrid] data dir ${config.dataDir}`);
   });
 
   const shutdown = async (signal: string) => {
     console.log(`\n[fleetgrid] ${signal} received, shutting down.`);
     await hub.close();
+    await db.close();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   };
