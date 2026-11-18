@@ -14,7 +14,6 @@ export interface CreateDodoCheckoutInput {
   currency?: string;
   customerName?: string;
   customerEmail?: string;
-  returnUrl?: string;
 }
 
 export interface DodoCheckoutResult {
@@ -43,6 +42,8 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
     const currency = input.currency || 'INR';
     const amount = Math.round(input.amount);
     const apiKey = process.env.DODO_PAYMENTS_API_KEY;
+    const productId = process.env.DODO_PRODUCT_ID?.trim();
+    const environment = process.env.DODO_ENVIRONMENT || 'test_mode';
 
     if (!apiKey || apiKey.trim().length <= 5) {
       throw ApiError.notImplemented(
@@ -50,13 +51,19 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
       );
     }
 
+    if (!productId) {
+      throw ApiError.notImplemented('Dodo Payments product is not configured. Set DODO_PRODUCT_ID to a real product in the selected Dodo account.');
+    }
+    if (environment !== 'test_mode' && environment !== 'live_mode') {
+      throw ApiError.badRequest('DODO_ENVIRONMENT must be test_mode or live_mode.');
+    }
     if (!input.customerEmail || !input.customerName) {
       throw ApiError.badRequest('A real customer name and billing email are required to create a payment session.');
     }
 
     const client = new DodoPayments({
       bearerToken: apiKey,
-      environment: (process.env.DODO_ENVIRONMENT as 'test_mode' | 'live_mode') || 'test_mode',
+      environment: environment as 'test_mode' | 'live_mode',
     });
 
     let session;
@@ -64,12 +71,19 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
       session = await client.checkoutSessions.create({
         product_cart: [
           {
-            product_id: process.env.DODO_PRODUCT_ID || 'prod_fleetgrid_freight',
+            product_id: productId,
             quantity: 1,
             amount: amount * 100,
           },
         ],
-        return_url: input.returnUrl || `${process.env.FRONTEND_ORIGIN || 'http://localhost:5173'}?payment=return&id=${paymentId}`,
+        return_url: (() => {
+          const frontendBase = process.env.APP_BASE_URL || process.env.FRONTEND_ORIGIN || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173');
+          if (!frontendBase) throw ApiError.notImplemented('Set APP_BASE_URL to the public FleetGrid frontend before enabling Dodo checkout.');
+          const url = new URL('/', frontendBase);
+          url.searchParams.set('payment', 'return');
+          url.searchParams.set('id', paymentId);
+          return url.toString();
+        })(),
         customer: {
           email: input.customerEmail,
           name: input.customerName,
