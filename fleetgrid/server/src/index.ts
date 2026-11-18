@@ -1,4 +1,6 @@
 import { createServer } from 'node:http';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import cors from 'cors';
 import express from 'express';
 import { config, serverRoot } from './config.js';
