@@ -29,6 +29,8 @@ jobs:
       - name: Build frontend and backend
         run: npm run build
       - name: Run backend end-to-end tests
+        env:
+          FLEETGRID_TEST_BYPASS_AUTH: 'true'
         run: |
           npm run dev --prefix fleetgrid/server > /tmp/fleetgrid-server.log 2>&1 &
           SERVER_PID=$!
