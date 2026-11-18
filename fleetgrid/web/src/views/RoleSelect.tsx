@@ -130,6 +130,8 @@ export function RoleSelect() {
             Create an account — driver or business
           </button>
           <span>·</span>
+          <button type="button" onClick={() => void setMode('LOGIN')} className="text-healthy/80 hover:text-healthy">Sign in</button>
+          <span>·</span>
           <span className="flex items-center gap-1.5">
             <span
               className={cn(
