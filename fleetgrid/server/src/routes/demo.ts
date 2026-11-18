@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { resetDemo } from '../services/demo.js';
 import { asyncHandler } from '../middleware/errors.js';
+import { requireRoles } from '../middleware/auth.js';
 
 export const demoRouter: Router = Router();
 
@@ -10,6 +11,7 @@ export const demoRouter: Router = Router();
  */
 demoRouter.post(
   '/demo/reset',
+  requireRoles('CONTROL_TOWER'),
   asyncHandler(async (_req, res) => {
     if (process.env.NODE_ENV === 'production') {
       res.status(403).json({ error: { code: 'DEMO_RESET_DISABLED', message: 'Demo reset is disabled in production.' } });
