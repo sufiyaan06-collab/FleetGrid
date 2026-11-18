@@ -197,7 +197,6 @@ shipmentsRouter.post(
   requireRoles('BUSINESS'),
   validateBody(confirmDeliverySchema),
   asyncHandler(async (req, res) => {
-    const body = req.body as z.infer<typeof confirmDeliverySchema>;
     const id = requiredParam(req, 'id');
     await assertShipmentAccess(res.locals.authUser as User, id, ['BUSINESS']);
     const result = await confirmDelivery(id, {
