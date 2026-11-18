@@ -17,7 +17,7 @@ import { requireRoles } from '../middleware/auth.js';
 export const recoveryRouter: Router = Router();
 
 // Recovery plans change fleet-wide assignments and require an operations role.
-recoveryRouter.use(requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'));
+recoveryRouter.use('/recovery-plans', requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'));
 
 const createPlanSchema = z.object({
   incidentId: z.string().min(2),
