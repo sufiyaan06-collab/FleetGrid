@@ -47,13 +47,13 @@ export function setSessionCookie(res: { setHeader(name: string, value: string): 
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader(
     'Set-Cookie',
-    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure}`,
+    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=None; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure}`,
   );
 }
 
 export function clearSessionCookie(res: { setHeader(name: string, value: string): void }): void {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=None; Max-Age=0${secure}`);
 }
 
 export function readSessionCookie(cookieHeader?: string): string | null {
