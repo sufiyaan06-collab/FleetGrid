@@ -5,6 +5,7 @@ import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { TOOL_CATALOG } from '../services/agentTools.js';
 import { AGENT_TOOL_CONTRACT } from '../services/agentToolSchema.js';
+import type { User } from '../types.js';
 
 export const miscRouter: Router = Router();
 
@@ -18,7 +19,50 @@ export const miscRouter: Router = Router();
 miscRouter.get(
   '/state',
   asyncHandler(async (_req, res) => {
-    res.json(await db.snapshot());
+    const user = res.locals.authUser as User;
+    const snapshot = await db.snapshot();
+
+    // Operations roles need the network-wide picture. Shippers and drivers receive
+    // only their organisation's private records plus the public capacity network.
+    if (user.role === 'CONTROL_TOWER' || user.role === 'OPERATOR' || user.role === 'VERIFIER') {
+      res.json(snapshot);
+      return;
+    }
+
+    const ownDrivers = snapshot.drivers.filter((driver) => driver.userId === user.id || driver.organizationId === user.organizationId);
+    const ownTruckIds = new Set(ownDrivers.map((driver) => driver.assignedTruckId).filter((id): id is string => Boolean(id)));
+    const ownTrucks = snapshot.trucks.filter((truck) => truck.organizationId === user.organizationId);
+    for (const truck of ownTrucks) ownTruckIds.add(truck.id);
+
+    const ownShipments = user.role === 'BUSINESS'
+      ? snapshot.shipments.filter((shipment) => shipment.shipperId === user.organizationId)
+      : snapshot.shipments.filter((shipment) => Boolean(shipment.truckId && ownTruckIds.has(shipment.truckId)));
+    const ownShipmentIds = new Set(ownShipments.map((shipment) => shipment.id));
+    const ownIncidents = snapshot.incidents.filter((incident) => ownTruckIds.has(incident.truckId));
+    const ownIncidentIds = new Set(ownIncidents.map((incident) => incident.id));
+    const visibleTruckIds = user.role === 'BUSINESS'
+      ? new Set(snapshot.trucks.map((truck) => truck.id))
+      : ownTruckIds;
+
+    res.json({
+      ...snapshot,
+      organizations: snapshot.organizations.filter((organization) => organization.id === user.organizationId),
+      users: snapshot.users.filter((member) => member.organizationId === user.organizationId),
+      drivers: ownDrivers,
+      trucks: user.role === 'BUSINESS' ? snapshot.trucks : ownTrucks,
+      // Capacity availability is shared across the network; shipment/customer data is not.
+      capacityOffers: user.role === 'BUSINESS'
+        ? snapshot.capacityOffers
+        : snapshot.capacityOffers.filter((offer) => ownTruckIds.has(offer.truckId)),
+      shipments: ownShipments,
+      incidents: ownIncidents,
+      recoveryPlans: snapshot.recoveryPlans.filter((plan) => ownIncidentIds.has(plan.incidentId)),
+      payments: snapshot.payments.filter((payment) => Boolean(payment.shipmentId && ownShipmentIds.has(payment.shipmentId))),
+      events: snapshot.events.filter((event) =>
+        Boolean((event.shipmentId && ownShipmentIds.has(event.shipmentId)) || (event.truckId && visibleTruckIds.has(event.truckId))),
+      ),
+      notifications: snapshot.notifications.filter((notification) => notification.recipientId === user.id),
+    });
   }),
 );
 
