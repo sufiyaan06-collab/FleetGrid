@@ -131,9 +131,10 @@ try {
 
   const shipperA = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
   assert.equal(shipperA.status, 200);
-  const stateA = await shipperA.json() as { shipments: Array<{ id: string }>; users: Array<{ id: string }> };
+  const stateA = await shipperA.json() as { shipments: Array<{ id: string }>; users: Array<{ id: string }>; trucks: Array<{ driverId: string | null }> };
   assert.deepEqual(stateA.shipments.map((s) => s.id), ['shipment_a'], 'shipper sees only their own shipments');
   assert.deepEqual(stateA.users.map((u) => u.id), ['user_a'], 'shipper sees only their own organization users');
+  assert.ok(stateA.trucks.every((truck) => truck.driverId === null), 'shipper snapshot does not expose private driver account links');
 
   const shipperB = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenB.token}` } });
   const stateB = await shipperB.json() as { shipments: Array<{ id: string }> };
