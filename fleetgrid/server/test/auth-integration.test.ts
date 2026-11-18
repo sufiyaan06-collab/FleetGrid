@@ -192,6 +192,11 @@ try {
     body: JSON.stringify({ incidentId: 'incident_private' }),
   });
   assert.equal(driverRecoveryWrite.status, 403, 'driver cannot create operations recovery plans');
+  const driverRecoveryPreview = await request('/incidents/incident_private/recovery-options', {
+    headers: { cookie: `fleetgrid_session=${tokenDriver.token}` },
+  });
+  assert.equal(driverRecoveryPreview.status, 403, 'drivers cannot inspect operations-only recovery previews');
+
   const driverEventWrite = await request('/events', {
     method: 'POST',
     headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
@@ -237,7 +242,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, immutable event-log write restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, recovery preview and immutable event-log restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
