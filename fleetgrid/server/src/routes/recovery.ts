@@ -68,6 +68,7 @@ recoveryRouter.get(
 /** GET /incidents/:id/recovery-options — read-only preview, creates nothing. */
 recoveryRouter.get(
   '/incidents/:id/recovery-options',
+  requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   asyncHandler(async (req, res) => {
     const { impact, options } = await findRecoveryOptions(requiredParam(req, 'id'));
     res.json({ impact, options, engine: 'DETERMINISTIC_PLACEHOLDER' });
