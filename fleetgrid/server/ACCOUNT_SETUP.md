@@ -63,3 +63,21 @@ The Node API can use PostgreSQL, but the application must not be switched to a n
 The migration utility refuses to write if the target table already contains records, checks record IDs and duplicate account emails, and wraps all inserts in one database transaction. It never edits or deletes the source JSON files. If the dry run or import reports an error, stop and investigate rather than clearing the target database.
 
 The migration must be coordinated with a maintenance window or a write freeze so records are not created or changed between taking the backup and switching the application. Do not run the import against a database that already contains live application records.
+
+## Dodo Payments configuration
+
+The Dodo checkout endpoint is enabled only when both the API and signed-webhook settings are present. Configure these values in the Render service's secret environment settings:
+
+- `DODO_PAYMENTS_API_KEY` — server-side Dodo API key.
+- `DODO_PRODUCT_ID` — a real product ID from the same Dodo account and mode.
+- `DODO_ENVIRONMENT` — use `test_mode` while testing; switch to `live_mode` only after successful end-to-end verification.
+- `DODO_PAYMENTS_WEBHOOK_KEY` — the signing secret for the webhook endpoint created in Dodo.
+- `APP_BASE_URL` — the public FleetGrid frontend URL used for the checkout return.
+
+Configure the Dodo webhook URL as:
+
+`https://fleetgrid-app.onrender.com/payments/dodo/webhook`
+
+Subscribe to `payment.succeeded`, `payment.failed`, and `payment.cancelled`. The endpoint verifies the Standard Webhooks signature against the original raw request body, checks the checkout-session reference and currency, and treats duplicate events idempotently. Browser redirects and the browser confirmation endpoint cannot mark a payment as paid.
+
+Do not enable checkout until the webhook endpoint is configured and tested in Dodo test mode. A successful payment event updates the payment record only; it does not bypass the driver's shipment-acceptance workflow.
