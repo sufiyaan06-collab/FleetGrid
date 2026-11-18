@@ -94,7 +94,8 @@ export function RoleSelect() {
               disabled={busy !== null}
               onClick={() => {
                 setBusy(option.id);
-                void setMode(option.id).finally(() => setBusy(null));
+                const destination = import.meta.env.PROD && option.id !== 'LANDING' ? 'LOGIN' : option.id;
+                void setMode(destination).finally(() => setBusy(null));
               }}
               className={cn(
                 'group flex flex-col rounded-lg border border-base-600 bg-base-800/80 p-4 text-left transition-all',
