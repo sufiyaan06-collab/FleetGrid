@@ -118,29 +118,6 @@ miscRouter.get(
   }),
 );
 
-/**
- * GET /payments — placeholder read model.
- * Real payment capture (Dodo) is a later phase; nothing here reports a fake success.
- */
-miscRouter.get(
-  '/payments',
-  asyncHandler(async (_req, res) => {
-    const user = res.locals.authUser as User;
-    const allPayments = await db.payments.get();
-    const shipments = await db.shipments.get();
-    const ownShipmentIds = new Set(shipments.filter((shipment) => shipment.shipperId === user.organizationId).map((shipment) => shipment.id));
-    const payments = user.role === 'CONTROL_TOWER' || user.role === 'OPERATOR' || user.role === 'VERIFIER'
-      ? allPayments
-      : user.role === 'BUSINESS'
-        ? allPayments.filter((payment) => Boolean(payment.shipmentId && ownShipmentIds.has(payment.shipmentId)))
-        : [];
-    res.json({
-      payments,
-      note: 'Payment provider integration is a later phase. Seeded rows are labelled DEMO_PLACEHOLDER.',
-    });
-  }),
-);
-
 miscRouter.get(
   '/notifications',
   asyncHandler(async (_req, res) => {
