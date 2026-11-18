@@ -196,7 +196,23 @@ authRouter.post(
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    await db.authAccounts.create(account);
+    try {
+      await db.authAccounts.create(account);
+    } catch (error) {
+      // The domain registration succeeded but the credential row did not.
+      // Compensate so a failed signup cannot leave an inaccessible account.
+      if (result.truck) {
+        const offers = await db.capacityOffers.find((offer) => offer.truckId === result.truck?.id);
+        const events = await db.events.find((event) => event.truckId === result.truck?.id);
+        for (const offer of offers) await db.capacityOffers.delete(offer.id);
+        for (const event of events) await db.events.delete(event.id);
+        await db.trucks.delete(result.truck.id);
+      }
+      if (result.driver) await db.drivers.delete(result.driver.id);
+      await db.users.delete(result.user.id);
+      await db.organizations.delete(result.organization.id);
+      throw error;
+    }
 
     res.status(202).json({
       ok: true,
