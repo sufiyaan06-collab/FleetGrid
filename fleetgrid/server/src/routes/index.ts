@@ -85,7 +85,7 @@ export const ENDPOINT_INDEX = [
   { method: 'GET', path: '/payments', purpose: 'List payments visible to the signed-in account' },
   { method: 'POST', path: '/payments/dodo/checkout', purpose: 'Create a provider checkout session for an owned shipment (requires Dodo credentials)' },
   { method: 'POST', path: '/payments/dodo/confirm', purpose: 'Reject browser-side payment confirmation; verified provider webhook required' },
-  { method: 'POST', path: '/payments/dodo/webhook', purpose: 'Dodo webhook placeholder; disabled until signature verification is configured' },
+  { method: 'POST', path: '/payments/dodo/webhook', purpose: 'Receive Standard Webhooks signature-verified Dodo payment events' },
   { method: 'POST', path: '/payments/create', purpose: 'Create payment intent (501 — Dodo not connected)' },
   { method: 'POST', path: '/webhooks/dodo', purpose: 'Dodo payment webhook (501 — Dodo not connected)' },
   { method: 'POST', path: '/proof/anchor', purpose: 'Anchor event hash on EVM testnet (501 — not configured)' },
