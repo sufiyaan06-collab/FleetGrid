@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { config } from '../config.js';
 import { buildSeedData } from '../seed/seed.js';
 import { db } from '../store/db.js';
@@ -36,7 +35,6 @@ export async function resetDemo(): Promise<{ trucks: number; shipments: number }
 
 /** Seeds automatically on a fresh clone so the demo works with zero manual steps. */
 export async function ensureSeeded(): Promise<{ seeded: boolean; trucks: number; shipments: number }> {
-  const markerExists = existsSync(config.dataDir);
   const existingTrucks = await db.trucks.get();
   if (existingTrucks.length > 0) {
     return { seeded: false, trucks: existingTrucks.length, shipments: (await db.shipments.get()).length };
