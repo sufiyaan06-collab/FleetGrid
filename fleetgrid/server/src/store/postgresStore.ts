@@ -48,7 +48,12 @@ export function createPostgresStore<T extends { id: string }>(
         );
       } catch (error) {
         if ((error as { code?: string }).code === '23505') {
-          throw new Error(`[store:${collection}] duplicate id ${row.id}`);
+          const duplicate = new Error(`[store:${collection}] unique constraint violated`);
+          Object.assign(duplicate, {
+            code: '23505',
+            constraint: (error as { constraint?: string }).constraint,
+          });
+          throw duplicate;
         }
         throw error;
       }
@@ -115,5 +120,11 @@ export async function initializePostgres(pool: Pool): Promise<void> {
     `CREATE UNIQUE INDEX IF NOT EXISTS fleetgrid_auth_email_unique_idx
      ON ${TABLE} (LOWER(data->>'email'))
      WHERE collection = 'auth-accounts'`,
+  );
+  // One active or paid checkout per shipment, enforced across API instances.
+  await pool.query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS fleetgrid_active_payment_shipment_unique_idx
+     ON ${TABLE} (data->>'shipmentId')
+     WHERE collection = 'payments' AND data->>'status' IN ('CREATED', 'PENDING', 'PAID')`,
   );
 }
