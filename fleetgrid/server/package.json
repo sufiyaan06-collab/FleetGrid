@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.json --noEmit false",
     "serve": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx test/flow.test.ts",
+    "test": "tsx test/auth-security.test.ts && tsx test/flow.test.ts",
     "reset": "node ../scripts/reset.mjs",
     "provision:ops": "tsx scripts/provision-ops.ts"
   },
