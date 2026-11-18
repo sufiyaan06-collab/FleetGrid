@@ -5,6 +5,8 @@ import { createTruck, departTruck, getTruck, listTrucks, updateTruckLocation } f
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
+import { requireRoles } from '../middleware/auth.js';
+import type { User } from '../types.js';
 
 export const trucksRouter: Router = Router();
 
@@ -56,19 +58,48 @@ trucksRouter.get(
   '/trucks/:id',
   asyncHandler(async (req, res) => {
     const truck = await getTruck(requiredParam(req, 'id'));
-    const shipments = await db.shipments.find((s) => s.truckId === truck.id);
+    const user = res.locals.authUser as User;
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && user.role === 'DRIVER') {
+      const ownDriver = (await db.drivers.find((driver) => driver.userId === user.id))[0];
+      if (!ownDriver || ownDriver.assignedTruckId !== truck.id) throw new Error('Truck not found.');
+    }
+    const allShipments = await db.shipments.find((s) => s.truckId === truck.id);
+    const shipments = process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' || ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)
+      ? allShipments
+      : user.role === 'BUSINESS'
+        ? allShipments.filter((shipment) => shipment.shipperId === user.organizationId)
+        : [];
     const offer = (await db.capacityOffers.find((o) => o.truckId === truck.id))[0] ?? null;
     const driver = truck.driverId ? await db.drivers.findById(truck.driverId) : undefined;
-    const incidents = await db.incidents.find((i) => i.truckId === truck.id);
+    const incidents = process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' || ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)
+      ? await db.incidents.find((i) => i.truckId === truck.id)
+      : user.role === 'DRIVER'
+        ? await db.incidents.find((i) => i.truckId === truck.id)
+        : [];
     res.json({ truck, driver: driver ?? null, capacityOffer: offer, shipments, incidents });
   }),
 );
 
 trucksRouter.post(
   '/trucks',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR'),
   validateBody(createTruckSchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json({ truck: await createTruck(req.body) });
+    const body = req.body as z.infer<typeof createTruckSchema>;
+    const user = res.locals.authUser as User;
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      if (!driver) throw new Error('No driver profile is linked to this account.');
+      const truck = await createTruck({
+        ...body,
+        organizationId: user.organizationId,
+        driverId: driver.id,
+      });
+      await db.drivers.update(driver.id, { assignedTruckId: truck.id });
+      res.status(201).json({ truck });
+      return;
+    }
+    res.status(201).json({ truck: await createTruck(body) });
   }),
 );
 
@@ -79,10 +110,20 @@ const departSchema = z.object({
 /** POST /trucks/:id/depart — truck ASSIGNED → IN_TRANSIT, shipments → IN_TRANSIT. */
 trucksRouter.post(
   '/trucks/:id/depart',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR'),
   validateBody(departSchema),
   asyncHandler(async (req, res) => {
     const { driverId } = req.body as { driverId?: string | null };
-    const result = await departTruck(requiredParam(req, 'id'), driverId ?? null);
+    const id = requiredParam(req, 'id');
+    const user = res.locals.authUser as User;
+    let actingDriverId = driverId ?? null;
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      const truck = await db.trucks.findById(id);
+      if (!driver || !truck || driver.assignedTruckId !== truck.id) throw new Error('Truck not found.');
+      actingDriverId = driver.id;
+    }
+    const result = await departTruck(id, actingDriverId);
     res.json({
       ok: true,
       truck: result.truck,
@@ -96,8 +137,14 @@ trucksRouter.post(
 /** POST /trucks/:id/location — updates GPS coordinates & heading and broadcasts over websocket. */
 trucksRouter.post(
   '/trucks/:id/location',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR'),
   asyncHandler(async (req, res) => {
     const id = requiredParam(req, 'id');
+    const user = res.locals.authUser as User;
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      if (!driver || driver.assignedTruckId !== id) throw new Error('Truck not found.');
+    }
     const { lat, lng, latitude, longitude, speed_kmph, speedKmph, heading } = req.body ?? {};
     const finalLat = lat ?? latitude;
     const finalLng = lng ?? longitude;
