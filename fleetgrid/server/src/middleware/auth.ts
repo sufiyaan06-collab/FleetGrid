@@ -44,6 +44,11 @@ export const requireAuthenticated: RequestHandler = (req, res, next) => {
       res.status(401).json({ error: { code: 'AUTH_REQUIRED', message: 'Please sign in to continue.' } });
       return;
     }
+    const organization = await db.organizations.findById(user.organizationId);
+    if (!organization || organization.status !== 'ACTIVE') {
+      res.status(403).json({ error: { code: 'ACCOUNT_DISABLED', message: 'This organisation is unavailable. Contact FleetGrid Operations.' } });
+      return;
+    }
 
     res.locals.authUser = user satisfies User;
     next();
