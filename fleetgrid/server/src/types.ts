@@ -73,6 +73,22 @@ export interface Organization {
   createdAt: string;
 }
 
+/** Private authentication record. Never include this collection in API snapshots. */
+export interface AuthAccount {
+  id: string;
+  email: string;
+  passwordHash: string;
+  emailVerifiedAt: string | null;
+  verificationTokenHash: string | null;
+  verificationExpiresAt: string | null;
+  sessionTokenHash: string | null;
+  sessionExpiresAt: string | null;
+  failedLoginCount: number;
+  lockedUntil: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface User {
   id: string;
   name: string;
