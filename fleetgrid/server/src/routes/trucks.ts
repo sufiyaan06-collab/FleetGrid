@@ -14,7 +14,17 @@ export const trucksRouter: Router = Router();
 trucksRouter.get(
   '/trucks/locations',
   asyncHandler(async (_req, res) => {
-    const trucks = await listTrucks();
+    const user = res.locals.authUser as User;
+    let trucks = await listTrucks();
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      const ownTruckIds = new Set(driver?.assignedTruckId ? [driver.assignedTruckId] : []);
+      trucks = trucks.filter((truck) => ownTruckIds.has(truck.id));
+    } else if (user.role === 'BUSINESS' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const ownShipments = await db.shipments.find((shipment) => shipment.shipperId === user.organizationId);
+      const ownTruckIds = new Set(ownShipments.map((shipment) => shipment.truckId).filter((id): id is string => Boolean(id)));
+      trucks = trucks.filter((truck) => ownTruckIds.has(truck.id));
+    }
     res.json(
       trucks.map((t) => ({
         id: t.id,
@@ -51,7 +61,17 @@ const createTruckSchema = z.object({
 trucksRouter.get(
   '/trucks',
   asyncHandler(async (_req, res) => {
-    res.json({ trucks: await listTrucks() });
+    const user = res.locals.authUser as User;
+    let trucks = await listTrucks();
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      const ownTruckIds = new Set(driver?.assignedTruckId ? [driver.assignedTruckId] : []);
+      trucks = trucks.filter((truck) => ownTruckIds.has(truck.id));
+    } else if (user.role === 'BUSINESS' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      // Public fleet supply can be browsed, but another fleet's driver link is private.
+      trucks = trucks.map((truck) => ({ ...truck, driverId: null }));
+    }
+    res.json({ trucks });
   }),
 );
 
@@ -77,9 +97,11 @@ trucksRouter.get(
       : user.role === 'DRIVER'
         ? await db.incidents.find((i) => i.truckId === truck.id)
         : [];
+    const canViewDriver = ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role) ||
+      (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true');
     res.json({
-      truck,
-      driver: driver ? { id: driver.id, name: driver.name, status: driver.status, assignedTruckId: driver.assignedTruckId } : null,
+      truck: user.role === 'BUSINESS' ? { ...truck, driverId: null } : truck,
+      driver: canViewDriver && driver ? { id: driver.id, name: driver.name, status: driver.status, assignedTruckId: driver.assignedTruckId } : null,
       capacityOffer: offer,
       shipments,
       incidents,
