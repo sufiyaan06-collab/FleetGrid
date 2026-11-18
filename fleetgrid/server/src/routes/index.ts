@@ -45,7 +45,7 @@ export const ENDPOINT_INDEX = [
   { method: 'POST', path: '/auth/signup', purpose: 'Create a Shipper or Driver account and send email verification' },
   { method: 'POST', path: '/auth/login', purpose: 'Sign in with verified email and password' },
   { method: 'GET', path: '/auth/me', purpose: 'Restore the current authenticated session' },
-  { method: 'GET', path: '/auth/verify-email', purpose: 'Verify an account email using its one-time link' },
+  { method: 'POST', path: '/auth/verify-email', purpose: 'Consume an email verification token after an explicit user action' },
   { method: 'POST', path: '/auth/logout', purpose: 'Revoke the current session' },
   { method: 'POST', path: '/demo/reset', purpose: 'Restore deterministic demo state' },
   { method: 'GET', path: '/organizations', purpose: 'List organizations' },
