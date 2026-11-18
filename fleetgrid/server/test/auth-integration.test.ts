@@ -19,6 +19,7 @@ const users = [
   { id: 'user_a', name: 'Shipper A User', role: 'BUSINESS', organizationId: 'shipper_a', contact: 'a@example.test', createdAt: now },
   { id: 'user_b', name: 'Shipper B User', role: 'BUSINESS', organizationId: 'shipper_b', contact: 'b@example.test', createdAt: now },
   { id: 'driver_user', name: 'Driver User', role: 'DRIVER', organizationId: 'fleet_a', contact: 'driver@example.test', createdAt: now },
+  { id: 'driver_other', name: 'Other Driver', role: 'DRIVER', organizationId: 'fleet_a', contact: 'other-driver@example.test', createdAt: now },
 ];
 const tokenA = issueSessionToken();
 const tokenB = issueSessionToken();
@@ -35,7 +36,14 @@ const shipments = [
 ];
 for (const [name, rows] of Object.entries({
   'organizations.json': orgs, 'users.json': users, 'auth-accounts.json': accounts,
-  'drivers.json': [], 'trucks.json': [], 'shipments.json': shipments,
+  'drivers.json': [
+    { id: 'driver_a', organizationId: 'fleet_a', userId: 'driver_user', name: 'Driver User', phone: '1111111111', assignedTruckId: 'truck_a', status: 'AVAILABLE', createdAt: now },
+    { id: 'driver_other_profile', organizationId: 'fleet_a', userId: 'driver_other', name: 'Other Driver', phone: '2222222222', assignedTruckId: 'truck_other', status: 'AVAILABLE', createdAt: now },
+  ],
+  'trucks.json': [
+    { id: 'truck_a', organizationId: 'fleet_a', registrationNo: 'KA01AA0001', capacityT: 5, availableT: 5, status: 'AVAILABLE', lat: 12.9, lng: 77.6, origin: 'A', destination: 'B', departureAt: null, driverId: 'driver_a', createdAt: now },
+    { id: 'truck_other', organizationId: 'fleet_a', registrationNo: 'KA01AA0002', capacityT: 5, availableT: 5, status: 'AVAILABLE', lat: 12.9, lng: 77.6, origin: 'C', destination: 'D', departureAt: null, driverId: 'driver_other_profile', createdAt: now },
+  ], 'shipments.json': shipments,
   'capacity-offers.json': [], 'incidents.json': [], 'recovery-plans.json': [],
   'payments.json': [], 'shipment-events.json': [], 'notifications.json': [],
 })) {
@@ -110,6 +118,13 @@ try {
 
   const driverCrossShipperDetail = await request('/shipments/shipment_a', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(driverCrossShipperDetail.status, 404, 'driver cannot open an unassigned shipment by ID');
+  const driverStateResponse = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(driverStateResponse.status, 200);
+  const driverState = await driverStateResponse.json() as { users: Array<{ id: string }>; drivers: Array<{ id: string }>; trucks: Array<{ id: string }> };
+  assert.deepEqual(driverState.users.map((u) => u.id), ['driver_user'], 'driver cannot see another driver account in the same fleet organization');
+  assert.deepEqual(driverState.drivers.map((d) => d.id), ['driver_a'], 'driver sees only their own driver profile');
+  assert.deepEqual(driverState.trucks.map((t) => t.id), ['truck_a'], 'driver sees only their assigned truck in private state');
+
   const driverRecoveryWrite = await request('/recovery-plans', {
     method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ incidentId: 'incident_private' }),
@@ -147,7 +162,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, login rejection, cross-account shipment isolation, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, login rejection, cross-account shipment isolation, driver account and truck isolation, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
