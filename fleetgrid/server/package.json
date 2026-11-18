@@ -2,7 +2,7 @@
   "name": "fleetgrid-server",
   "version": "0.1.0",
   "private": true,
-  "description": "FleetGrid authoritative backend (Express + TypeScript + JSON file storage)",
+  "description": "FleetGrid authoritative backend (Express + TypeScript + PostgreSQL, with local JSON fallback)",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
