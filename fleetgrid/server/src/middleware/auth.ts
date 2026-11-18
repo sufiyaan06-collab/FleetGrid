@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express';
 import { db } from '../store/db.js';
 import { hashOpaqueToken, readSessionCookie } from '../services/authSecurity.js';
 import type { User } from '../types.js';
+import { config } from '../config.js';
 
 /** Authenticated identity is attached to response locals, never trusted from a body. */
 export const requireAuthenticated: RequestHandler = (req, res, next) => {
@@ -11,6 +12,16 @@ export const requireAuthenticated: RequestHandler = (req, res, next) => {
       if (seeded) {
         res.locals.authUser = seeded;
         return next();
+      }
+    }
+
+    // Cookie sessions use SameSite=None for the separately hosted frontend.
+    // Validate browser origins on every state-changing request to mitigate CSRF.
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+      const origin = req.get('origin');
+      if (origin && !config.corsOrigins.includes(origin)) {
+        res.status(403).json({ error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } });
+        return;
       }
     }
 
