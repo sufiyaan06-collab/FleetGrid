@@ -37,6 +37,15 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
       if (!shipment) {
         throw ApiError.notFound(`Shipment ${input.shipmentId} does not exist.`);
       }
+      const existingPayments = await db.payments.find((payment) =>
+        payment.shipmentId === shipment!.id && payment.status !== 'FAILED',
+      );
+      if (existingPayments.some((payment) => payment.status === 'PAID')) {
+        throw ApiError.conflict('This shipment already has a completed payment.');
+      }
+      if (existingPayments.some((payment) => payment.status === 'PENDING' || payment.status === 'CREATED')) {
+        throw ApiError.conflict('A payment checkout is already pending for this shipment.');
+      }
     }
 
     const paymentId = newId('pay');
