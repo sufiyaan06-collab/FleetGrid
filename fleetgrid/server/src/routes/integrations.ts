@@ -4,6 +4,8 @@ import { db } from '../store/db.js';
 import { ApiError } from '../lib/errors.js';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
+import { requireRoles } from '../middleware/auth.js';
+import type { User } from '../types.js';
 
 /**
  * Sponsor integrations that the Master PRD §16 requires but this build has not
@@ -31,13 +33,17 @@ const createPaymentSchema = z.object({
 /** POST /payments/create — Dodo Payments intent creation. */
 integrationsRouter.post(
   '/payments/create',
+  requireRoles('BUSINESS'),
   validateBody(createPaymentSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof createPaymentSchema>;
 
     if (body.shipmentId) {
       const shipment = await db.shipments.findById(body.shipmentId);
-      if (!shipment) throw ApiError.notFound(`Shipment ${body.shipmentId} does not exist.`);
+      const user = res.locals.authUser as User;
+      if (!shipment || (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && shipment.shipperId !== user.organizationId)) {
+        throw ApiError.notFound('Shipment not found.');
+      }
     }
 
     throw ApiError.notImplemented(
@@ -98,6 +104,7 @@ const anchorProofSchema = z.object({
  */
 integrationsRouter.post(
   '/proof/anchor',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(anchorProofSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof anchorProofSchema>;
@@ -108,7 +115,7 @@ integrationsRouter.post(
 
     if (body.eventId) {
       const event = await db.events.findById(body.eventId);
-      if (!event) throw ApiError.notFound(`Event ${body.eventId} does not exist, so there is no hash to anchor.`);
+      if (!event) throw ApiError.notFound('Event not found.');
       throw ApiError.notImplemented(
         `Event ${event.id} is hashed (${event.hash.slice(0, 12)}…) but no EVM testnet anchoring is configured. proofStatus stays ${event.proofStatus} and no transaction hash is invented.`,
         {
@@ -121,6 +128,8 @@ integrationsRouter.post(
       );
     }
 
+    const shipment = await db.shipments.findById(body.shipmentId!);
+    if (!shipment) throw ApiError.notFound('Shipment not found.');
     const events = await db.events.find((e) => e.shipmentId === body.shipmentId);
     throw ApiError.notImplemented(
       `Shipment ${body.shipmentId} has ${events.length} hashed event(s), but no EVM testnet anchoring is configured. proofStatus stays NOT_ANCHORED and no transaction hash is invented.`,
