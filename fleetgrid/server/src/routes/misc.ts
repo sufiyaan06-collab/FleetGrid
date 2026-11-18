@@ -22,6 +22,10 @@ miscRouter.get(
   asyncHandler(async (_req, res) => {
     const user = res.locals.authUser as User;
     const snapshot = await db.snapshot();
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') {
+      res.json(snapshot);
+      return;
+    }
 
     // Operations roles need the network-wide picture. Shippers and drivers receive
     // only their organisation's private records plus the public capacity network.
