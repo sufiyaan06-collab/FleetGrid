@@ -11,6 +11,10 @@ export const demoRouter: Router = Router();
 demoRouter.post(
   '/demo/reset',
   asyncHandler(async (_req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      res.status(403).json({ error: { code: 'DEMO_RESET_DISABLED', message: 'Demo reset is disabled in production.' } });
+      return;
+    }
     const result = await resetDemo();
     res.json({
       ok: true,
