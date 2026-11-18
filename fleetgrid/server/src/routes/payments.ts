@@ -29,7 +29,11 @@ paymentsRouter.post(
       return;
     }
 
-    const client = new DodoPayments({ webhookKey });
+    // The SDK constructor requires a bearer token even though unwrap performs no API call.
+    const client = new DodoPayments({
+      bearerToken: process.env.DODO_PAYMENTS_API_KEY || 'webhook-verification-only',
+      webhookKey,
+    });
     let event;
     try {
       event = client.webhooks.unwrap(rawBody, {
