@@ -73,7 +73,8 @@ export function PaymentsView() {
       });
       await refresh();
       setCheckoutNotice('Payment session created. Complete payment on Dodo’s secure checkout page. FleetGrid will show PAID only after the provider webhook is verified.');
-      window.open(res.checkoutUrl, '_blank', 'noopener,noreferrer');
+      // Navigate the current tab so browser popup blockers cannot silently block checkout.
+      window.location.assign(res.checkoutUrl);
     } catch (err) {
       setCheckoutNotice((err as Error).message || 'Dodo Payments is not configured yet.');
     } finally {
