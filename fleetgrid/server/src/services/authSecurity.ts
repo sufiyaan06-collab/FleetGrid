@@ -98,7 +98,7 @@ export async function sendVerificationEmail(email: string, token: string): Promi
 
   let url: URL;
   try {
-    url = new URL('/verify-email', baseUrl);
+    url = new URL('/', baseUrl);
     url.searchParams.set('token', token);
   } catch {
     throw new ApiError(503, 'EMAIL_CONFIGURATION_INVALID', 'APP_BASE_URL must be a valid absolute URL.');
