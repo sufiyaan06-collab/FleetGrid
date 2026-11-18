@@ -54,6 +54,9 @@ authRouter.post(
   '/auth/demo-login',
   validateBody(demoLoginSchema),
   asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      throw new AuthApiError(403, 'DEMO_LOGIN_DISABLED', 'Demo role login is disabled in production. Sign in with your verified account.');
+    }
     const { role } = req.body as { role: Role };
     const users = await db.users.get();
     const user = users.find((u) => u.role === role) ?? users[0];
@@ -112,6 +115,9 @@ authRouter.post(
   '/auth/register',
   validateBody(registerSchema),
   asyncHandler(async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      throw new AuthApiError(403, 'DEMO_REGISTRATION_DISABLED', 'Use verified email signup to create a FleetGrid account.');
+    }
     const body = req.body as z.infer<typeof registerSchema>;
     const result = await register({
       role: body.role,
