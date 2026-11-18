@@ -49,6 +49,11 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is required. This script never guesses a database target.');
 }
 
+const recognizedSourceFiles = collections.filter(([, filename]) => existsSync(resolve(sourceDir, filename)));
+if (recognizedSourceFiles.length === 0) {
+  throw new Error(`No recognised FleetGrid JSON collection files were found in ${sourceDir}. Check DATA_DIR; migration stopped.`);
+}
+
 const loaded = await Promise.all(
   collections.map(async ([collection, filename]) => ({
     collection,
@@ -67,6 +72,7 @@ for (const account of accountRows) {
 }
 
 const total = loaded.reduce((sum, item) => sum + item.rows.length, 0);
+if (total === 0) throw new Error('No records were found in the source JSON files. Refusing to import an empty dataset.');
 process.stdout.write(`Source: ${sourceDir}\n`);
 for (const item of loaded) process.stdout.write(`  ${item.collection}: ${item.rows.length} records\n`);
 process.stdout.write(`Total: ${total} records\n`);
