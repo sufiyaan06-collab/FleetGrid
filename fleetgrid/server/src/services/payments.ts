@@ -45,6 +45,7 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
     const productId = process.env.DODO_PRODUCT_ID?.trim();
     const environment = process.env.DODO_ENVIRONMENT || 'test_mode';
     const webhookKey = process.env.DODO_PAYMENTS_WEBHOOK_KEY;
+    const webhookEnabled = process.env.DODO_PAYMENTS_WEBHOOK_ENABLED === 'true';
 
     if (!apiKey || apiKey.trim().length <= 5) {
       throw ApiError.notImplemented(
@@ -57,6 +58,9 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
     }
     if (!webhookKey) {
       throw ApiError.notImplemented('Dodo checkout is disabled until DODO_PAYMENTS_WEBHOOK_KEY is configured for signed payment confirmation.');
+    }
+    if (!webhookEnabled) {
+      throw ApiError.notImplemented('Dodo checkout is disabled until the signed webhook endpoint has been tested and DODO_PAYMENTS_WEBHOOK_ENABLED is set to true.');
     }
     if (environment !== 'test_mode' && environment !== 'live_mode') {
       throw ApiError.badRequest('DODO_ENVIRONMENT must be test_mode or live_mode.');
