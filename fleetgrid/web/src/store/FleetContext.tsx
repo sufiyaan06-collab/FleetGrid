@@ -138,7 +138,34 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const connection = useRealtime({ onMessage: handleMessage, onOpen: () => void refresh() });
 
   useEffect(() => {
+    let active = true;
+    void api.me().then((account) => {
+      if (!active) return;
+      const nextMode = account.user.role === 'BUSINESS'
+        ? 'BUSINESS'
+        : account.user.role === 'DRIVER'
+          ? 'DRIVER'
+          : 'CONTROL_TOWER';
+      const restored: DemoLoginResponse = {
+        ok: true,
+        mode: 'authenticated',
+        user: account.user,
+        organization: account.organization,
+        driver: account.driver,
+        availableRoles: [account.user.role],
+      };
+      setSession(restored);
+      setModeState(nextMode);
+      try {
+        window.localStorage.setItem(MODE_STORAGE_KEY, nextMode);
+      } catch {
+        /* private mode: ignore */
+      }
+    }).catch(() => {
+      // No valid credential session: leave the user at the public portal selector.
+    });
     void refresh();
+    return () => { active = false; };
   }, [refresh]);
 
   useEffect(
