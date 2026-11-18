@@ -56,7 +56,7 @@ incidentsRouter.post(
       severity: body.severity,
       description: body.description,
       transcript: body.transcript ?? null,
-      source: body.source,
+      source: user.role === 'DRIVER' ? 'DRIVER_APP' : body.source,
       actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? body.actorId ?? null : user.id,
     });
     res.status(201).json({
