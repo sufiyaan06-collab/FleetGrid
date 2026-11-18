@@ -72,6 +72,7 @@ The Dodo checkout endpoint is enabled only when both the API and signed-webhook 
 - `DODO_PRODUCT_ID` — a real product ID from the same Dodo account and mode.
 - `DODO_ENVIRONMENT` — use `test_mode` while testing; switch to `live_mode` only after successful end-to-end verification.
 - `DODO_PAYMENTS_WEBHOOK_KEY` — the signing secret for the webhook endpoint created in Dodo.
+- `DODO_PAYMENTS_WEBHOOK_ENABLED` — leave unset/false until signed test-mode webhook delivery has been verified; set to `true` only after that test passes.
 - `APP_BASE_URL` — the public FleetGrid frontend URL used for the checkout return.
 
 Configure the Dodo webhook URL as:
@@ -80,4 +81,4 @@ Configure the Dodo webhook URL as:
 
 Subscribe to `payment.succeeded`, `payment.failed`, and `payment.cancelled`. The endpoint verifies the Standard Webhooks signature against the original raw request body, checks the checkout-session reference and currency, and treats duplicate events idempotently. Browser redirects and the browser confirmation endpoint cannot mark a payment as paid.
 
-Do not enable checkout until the webhook endpoint is configured and tested in Dodo test mode. A successful payment event updates the payment record only; it does not bypass the driver's shipment-acceptance workflow.
+Do not enable checkout until the webhook endpoint is configured and tested in Dodo test mode. The API additionally requires `DODO_PAYMENTS_WEBHOOK_ENABLED=true`, so merely adding an API key or secret does not open checkout. A successful payment event updates the payment record only; it does not bypass the driver's shipment-acceptance workflow.
