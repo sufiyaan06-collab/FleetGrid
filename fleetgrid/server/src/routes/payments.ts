@@ -18,7 +18,6 @@ const createDodoCheckoutSchema = z.object({
   currency: z.string().length(3).optional(),
   customerName: z.string().min(1).optional(),
   customerEmail: z.string().email().optional(),
-  returnUrl: z.string().url().optional(),
 });
 
 paymentsRouter.post(
@@ -41,7 +40,6 @@ paymentsRouter.post(
       currency: shipment.currency,
       customerName: user.name,
       customerEmail: account.email,
-      returnUrl: body.returnUrl,
     });
     res.status(201).json(result);
   }),
