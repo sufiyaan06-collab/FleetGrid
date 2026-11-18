@@ -14,21 +14,25 @@ const orgs = [
   { id: 'shipper_a', name: 'Shipper A', type: 'SHIPPER', status: 'ACTIVE', createdAt: now },
   { id: 'shipper_b', name: 'Shipper B', type: 'SHIPPER', status: 'ACTIVE', createdAt: now },
   { id: 'fleet_a', name: 'Fleet A', type: 'FLEET_OPERATOR', status: 'ACTIVE', createdAt: now },
+  { id: 'suspended_org', name: 'Suspended Shipper', type: 'SHIPPER', status: 'SUSPENDED', createdAt: now },
 ];
 const users = [
   { id: 'user_a', name: 'Shipper A User', role: 'BUSINESS', organizationId: 'shipper_a', contact: 'a@example.test', createdAt: now },
   { id: 'user_b', name: 'Shipper B User', role: 'BUSINESS', organizationId: 'shipper_b', contact: 'b@example.test', createdAt: now },
   { id: 'driver_user', name: 'Driver User', role: 'DRIVER', organizationId: 'fleet_a', contact: 'driver@example.test', createdAt: now },
   { id: 'driver_other', name: 'Other Driver', role: 'DRIVER', organizationId: 'fleet_a', contact: 'other-driver@example.test', createdAt: now },
+  { id: 'suspended_user', name: 'Suspended User', role: 'BUSINESS', organizationId: 'suspended_org', contact: 'suspended@example.test', createdAt: now },
 ];
 const tokenA = issueSessionToken();
 const tokenB = issueSessionToken();
 const tokenDriver = issueSessionToken();
+const tokenSuspended = issueSessionToken();
 const passwordHash = await hashPassword(password);
 const accounts = [
   { id: 'user_a', email: 'a@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenA.tokenHash, sessionExpiresAt: tokenA.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
   { id: 'user_b', email: 'b@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenB.tokenHash, sessionExpiresAt: tokenB.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
   { id: 'driver_user', email: 'driver@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenDriver.tokenHash, sessionExpiresAt: tokenDriver.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
+  { id: 'suspended_user', email: 'suspended@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenSuspended.tokenHash, sessionExpiresAt: tokenSuspended.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
 ];
 const shipments = [
   { id: 'shipment_a', reference: 'A-001', cargoName: 'Private cargo A', shipperId: 'shipper_a', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
@@ -79,6 +83,11 @@ try {
 
   const anonymous = await request('/state');
   assert.equal(anonymous.status, 401, 'operational state requires a session');
+  const suspendedState = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenSuspended.token}` } });
+  assert.equal(suspendedState.status, 403, 'suspended organisations cannot access operational APIs');
+  const suspendedSession = await request('/auth/me', { headers: { cookie: `fleetgrid_session=${tokenSuspended.token}` } });
+  assert.equal(suspendedSession.status, 403, 'suspended organisations cannot restore an authenticated session');
+
 
   const opsSignup = await request('/auth/signup', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -179,7 +188,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, login rejection, cross-account shipment isolation, driver account and truck isolation, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, login rejection, cross-account shipment isolation, driver account and truck isolation, suspended organisation lockout, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
