@@ -87,7 +87,7 @@ export const api = {
     organizationName?: string;
     truck?: { registrationNo: string; capacityT: number; origin: string; destination: string };
   }) => post<{ ok: true; verificationRequired: true; message: string; email: string }>('/auth/signup', input),
-  verifyEmail: (token: string) => request<{ ok: true; message: string }>(`/auth/verify-email?token=${encodeURIComponent(token)}`),
+  verifyEmail: (token: string) => post<{ ok: true; message: string }>('/auth/verify-email', { token }),
   resendVerification: (email: string) => post<{ ok: true; message: string }>('/auth/resend-verification', { email }),
 
   /**
