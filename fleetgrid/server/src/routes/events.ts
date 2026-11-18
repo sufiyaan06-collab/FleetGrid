@@ -4,7 +4,6 @@ import { db } from '../store/db.js';
 import { recordEvent } from '../services/events.js';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
-import { requireRoles } from '../middleware/auth.js';
 import { ApiError } from '../lib/errors.js';
 import type { User } from '../types.js';
 
