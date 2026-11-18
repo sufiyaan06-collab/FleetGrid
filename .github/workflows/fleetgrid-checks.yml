@@ -1,0 +1,32 @@
+name: FleetGrid checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'fleetgrid/**'
+      - 'package.json'
+      - 'render.yaml'
+      - '.github/workflows/fleetgrid-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fleetgrid/**'
+      - 'package.json'
+      - 'render.yaml'
+      - '.github/workflows/fleetgrid-checks.yml'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build frontend and backend
+        run: npm run build
+      - name: Run backend tests
+        run: npm test
