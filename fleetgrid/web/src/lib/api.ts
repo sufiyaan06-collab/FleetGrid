@@ -297,7 +297,6 @@ export const api = {
     currency?: string;
     customerName?: string;
     customerEmail?: string;
-    returnUrl?: string;
   }) =>
     post<{
       payment: Payment;
