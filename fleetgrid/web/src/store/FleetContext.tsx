@@ -160,7 +160,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       }
       try {
         // REGISTER, LIVE_MAP, PAYMENTS, and LANDING are screens, so there is no seeded role to log into for them.
-        if (next === 'REGISTER' || next === 'LIVE_MAP' || next === 'PAYMENTS' || next === 'LANDING') return;
+        if (next === 'REGISTER' || next === 'LIVE_MAP' || next === 'PAYMENTS' || next === 'LANDING' || next === 'LOGIN') return;
         const login = await api.demoLogin(next);
         setSession(login);
       } catch (err) {
@@ -235,7 +235,8 @@ function readStoredMode(): Mode | null {
       stored === 'PAYMENTS' ||
       stored === 'BUSINESS' ||
       stored === 'DRIVER' ||
-      stored === 'REGISTER'
+      stored === 'REGISTER' ||
+      stored === 'LOGIN'
     ) {
       return stored as Mode;
     }
