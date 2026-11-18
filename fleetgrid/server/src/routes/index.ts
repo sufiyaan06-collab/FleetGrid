@@ -19,7 +19,10 @@ export function buildRouter(): Router {
 
   router.use(healthRouter);
   router.use(authRouter);
-  // Every operational API is private. Only health and auth endpoints are public.
+  // Payment router has its own auth guard, except for its signature-verified
+  // Dodo webhook, which must accept provider callbacks without a user cookie.
+  router.use(paymentsRouter);
+  // Every other operational API requires an authenticated user session.
   router.use(requireAuthenticated);
   router.use(miscRouter);
   router.use(trucksRouter);
@@ -28,7 +31,6 @@ export function buildRouter(): Router {
   router.use(driverRouter);
   router.use(incidentsRouter);
   router.use(recoveryRouter);
-  router.use(paymentsRouter);
   router.use(eventsRouter);
   router.use(demoRouter);
   router.use(integrationsRouter);
