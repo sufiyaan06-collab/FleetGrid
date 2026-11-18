@@ -116,6 +116,24 @@ try {
   });
   assert.equal(driverRecoveryWrite.status, 403, 'driver cannot create operations recovery plans');
 
+  const driverPaymentIntent = await request('/payments/create', {
+    method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR' }),
+  });
+  assert.equal(driverPaymentIntent.status, 403, 'drivers cannot create payment intents');
+
+  const crossShipperPaymentIntent = await request('/payments/create', {
+    method: 'POST', headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_b', amount: 100, currency: 'INR' }),
+  });
+  assert.equal(crossShipperPaymentIntent.status, 404, 'shipper cannot create a payment intent for another shipper shipment');
+
+  const driverProofAnchor = await request('/proof/anchor', {
+    method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(driverProofAnchor.status, 403, 'drivers cannot invoke operations blockchain proof anchoring');
+
   const driverPayments = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(driverPayments.status, 200);
   const paymentData = await driverPayments.json() as { payments: unknown[] };
@@ -129,7 +147,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, login rejection, cross-account shipment isolation, role restrictions, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, login rejection, cross-account shipment isolation, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
