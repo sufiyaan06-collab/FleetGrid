@@ -20,6 +20,7 @@ import {
   verifyPassword,
 } from '../services/authSecurity.js';
 import { ApiError as AuthApiError } from '../lib/errors.js';
+import { runExclusive } from '../lib/mutex.js';
 
 export const authRouter: Router = Router();
 
@@ -284,19 +285,23 @@ authRouter.post(
   authRateLimit({ windowMs: 60 * 60 * 1000, max: 20, message: 'Too many verification attempts. Please try again later.' }),
   asyncHandler(async (req, res) => {
     const token = (req.body as { token: string }).token;
-    const tokenHash = hashOpaqueToken(token);
-    const matches = await db.authAccounts.find((account) => account.verificationTokenHash === tokenHash);
-    const account = matches[0];
-    if (!account || !account.verificationExpiresAt || Date.parse(account.verificationExpiresAt) < Date.now()) {
-      throw new AuthApiError(400, 'VERIFICATION_LINK_INVALID', 'This verification link is invalid or expired. Request a new one.');
-    }
-    await db.authAccounts.update(account.id, {
-      emailVerifiedAt: new Date().toISOString(),
-      verificationTokenHash: null,
-      verificationExpiresAt: null,
-      updatedAt: new Date().toISOString(),
+    const result = await runExclusive(async () => {
+      const tokenHash = hashOpaqueToken(token);
+      const matches = await db.authAccounts.find((account) => account.verificationTokenHash === tokenHash);
+      const account = matches[0];
+      if (!account || !account.verificationExpiresAt || Date.parse(account.verificationExpiresAt) < Date.now()) {
+        throw new AuthApiError(400, 'VERIFICATION_LINK_INVALID', 'This verification link is invalid or expired. Request a new one.');
+      }
+      const updated = await db.authAccounts.update(account.id, {
+        emailVerifiedAt: new Date().toISOString(),
+        verificationTokenHash: null,
+        verificationExpiresAt: null,
+        updatedAt: new Date().toISOString(),
+      });
+      if (!updated) throw new AuthApiError(400, 'VERIFICATION_LINK_INVALID', 'This verification link is invalid or expired. Request a new one.');
+      return { ok: true, message: 'Email verified. You can now sign in.' };
     });
-    res.json({ ok: true, message: 'Email verified. You can now sign in.' });
+    res.json(result);
   }),
 );
 
