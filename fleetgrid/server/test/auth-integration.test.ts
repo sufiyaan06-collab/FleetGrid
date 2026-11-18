@@ -235,6 +235,13 @@ try {
   assert.equal(driverProofAnchor.status, 403, 'drivers cannot invoke operations blockchain proof anchoring');
 
 
+  const duplicatePendingCheckout = await request('/payments/dodo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR', customerName: 'Shipper A User', customerEmail: 'a@example.test' }),
+  });
+  assert.equal(duplicatePendingCheckout.status, 409, 'a shipment cannot create a second active checkout session');
+
   const webhookPayload = JSON.stringify({
     business_id: 'dodo_test_business',
     data: {
@@ -279,6 +286,13 @@ try {
   const settledPayment = paymentListData.payments.find((payment) => payment.id === 'payment_a');
   assert.equal(settledPayment?.status, 'PAID', 'verified provider webhook settles the matching local payment');
   assert.equal(settledPayment?.providerPaymentId, 'dodo_payment_001', 'provider payment id is stored separately from the checkout session id');
+  const duplicatePaidCheckout = await request('/payments/dodo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR', customerName: 'Shipper A User', customerEmail: 'a@example.test' }),
+  });
+  assert.equal(duplicatePaidCheckout.status, 409, 'a shipment that is already paid cannot be charged again');
+
   const duplicateWebhook = await request('/payments/dodo/webhook', validWebhookRequest);
   assert.equal(duplicateWebhook.status, 200, 'duplicate signed webhook is acknowledged idempotently');
   const stateAfterPayment = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
@@ -322,7 +336,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, recovery preview and immutable event-log restrictions, role restrictions, signed Dodo webhook verification and idempotent settlement, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, recovery preview and immutable event-log restrictions, role restrictions, signed Dodo webhook verification, idempotent settlement and duplicate checkout prevention, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
