@@ -154,69 +154,82 @@ export interface ConfirmPaymentResult {
 }
 
 /**
- * Confirms payment from Dodo Payments webhook or completed checkout return.
- * Atomically marks payment PAID, confirms linked shipment, hashes audit trail, and broadcasts.
+ * Settles a payment only after the provider webhook has been signature-verified.
+ * The checkout session id must match the session created by FleetGrid. Shipment
+ * workflow state is deliberately untouched; driver acceptance remains its own gate.
  */
 export async function confirmDodoPayment(
   paymentId: string,
-  providerReference?: string,
+  checkoutSessionId?: string,
   paymentMethod?: string,
+  providerPaymentId?: string,
 ): Promise<ConfirmPaymentResult> {
   return runExclusive(async () => {
     const payment = await db.payments.findById(paymentId);
-    if (!payment) {
-      throw ApiError.notFound(`Payment ${paymentId} does not exist.`);
+    if (!payment) throw ApiError.notFound(`Payment ${paymentId} does not exist.`);
+    if (!checkoutSessionId || payment.providerReference !== checkoutSessionId) {
+      throw ApiError.conflict('The verified Dodo event does not match this checkout session.');
+    }
+    const shipment = payment.shipmentId ? await db.shipments.findById(payment.shipmentId) ?? null : null;
+    if (payment.status === 'PAID') return { payment, shipment };
+    if (!['CREATED', 'PENDING', 'FAILED'].includes(payment.status)) {
+      throw ApiError.conflict(`Payment ${payment.id} cannot be settled from ${payment.status}.`);
     }
 
     const updatedPayment = await db.payments.update(payment.id, {
       status: 'PAID',
-      providerReference: providerReference ?? payment.providerReference,
-      paymentMethod: paymentMethod ?? 'Dodo Hosted Checkout',
+      providerPaymentId: providerPaymentId ?? payment.providerPaymentId ?? null,
+      paymentMethod: paymentMethod ?? payment.paymentMethod ?? 'Dodo Hosted Checkout',
       updatedAt: nowIso(),
     });
-
     if (!updatedPayment) throw ApiError.notFound(`Payment ${paymentId} disappeared.`);
 
-    let updatedShipment: Shipment | null = null;
-    if (updatedPayment.shipmentId) {
-      const shipment = await db.shipments.findById(updatedPayment.shipmentId);
-      if (shipment) {
-        // If shipment was holding capacity, advance it to CONFIRMED
-        if (shipment.status === 'CAPACITY_RESERVED' || shipment.status === 'DRAFT') {
-          updatedShipment =
-            (await db.shipments.update(shipment.id, {
-              status: 'CONFIRMED',
-              updatedAt: nowIso(),
-            })) ?? null;
-          if (updatedShipment) {
-            hub.broadcast('shipment.updated', updatedShipment);
-          }
-        } else {
-          updatedShipment = shipment ?? null;
-        }
-
-        await recordEvent({
-          eventType: 'payment.confirmed',
-          shipmentId: shipment.id,
-          truckId: shipment.truckId ?? null,
-          payload: {
-            paymentId: updatedPayment.id,
-            amount: updatedPayment.amount,
-            currency: updatedPayment.currency,
-            providerReference: updatedPayment.providerReference,
-            provider: 'Dodo Payments',
-          },
-          actorType: 'SYSTEM',
-        });
-      }
-    }
-
+    await recordEvent({
+      eventType: 'payment.confirmed',
+      shipmentId: shipment?.id ?? null,
+      truckId: shipment?.truckId ?? null,
+      payload: {
+        paymentId: updatedPayment.id,
+        providerPaymentId: updatedPayment.providerPaymentId ?? null,
+        checkoutSessionId,
+        amount: updatedPayment.amount,
+        currency: updatedPayment.currency,
+        provider: 'Dodo Payments',
+      },
+      actorType: 'SYSTEM',
+    });
     hub.broadcast('payment.updated', updatedPayment);
+    return { payment: updatedPayment, shipment };
+  });
+}
 
-    return {
-      payment: updatedPayment,
-      shipment: updatedShipment,
-    };
+/** Mark a checkout failed/cancelled from a verified provider webhook. */
+export async function failDodoPayment(
+  paymentId: string,
+  checkoutSessionId: string,
+  reason?: string,
+): Promise<Payment> {
+  return runExclusive(async () => {
+    const payment = await db.payments.findById(paymentId);
+    if (!payment) throw ApiError.notFound(`Payment ${paymentId} does not exist.`);
+    if (payment.providerReference !== checkoutSessionId) {
+      throw ApiError.conflict('The verified Dodo event does not match this checkout session.');
+    }
+    if (payment.status === 'PAID' || payment.status === 'FAILED') return payment;
+
+    const updated = await db.payments.update(payment.id, {
+      status: 'FAILED',
+      updatedAt: nowIso(),
+    });
+    if (!updated) throw ApiError.notFound(`Payment ${paymentId} disappeared.`);
+    await recordEvent({
+      eventType: 'payment.failed',
+      shipmentId: payment.shipmentId,
+      payload: { paymentId: payment.id, checkoutSessionId, reason: reason ?? 'Provider reported payment failure' },
+      actorType: 'SYSTEM',
+    });
+    hub.broadcast('payment.updated', updated);
+    return updated;
   });
 }
 
