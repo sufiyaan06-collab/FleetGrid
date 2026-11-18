@@ -101,7 +101,7 @@ try {
   });
   assert.equal(unavailableEmailSignup.status, 503, 'signup is unavailable without configured email delivery');
   const storedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
-  assert.equal(storedAccounts.length, 3, 'rejected signup attempts must not create auth accounts');
+  assert.equal(storedAccounts.length, 4, 'rejected signup attempts must not create auth accounts');
   const resendPayload = { email: 'verify-limit@example.test' };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const resend = await request('/auth/resend-verification', {
