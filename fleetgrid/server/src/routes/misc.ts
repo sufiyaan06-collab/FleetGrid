@@ -34,10 +34,9 @@ miscRouter.get(
       return;
     }
 
-    const ownDrivers = snapshot.drivers.filter((driver) => driver.userId === user.id || driver.organizationId === user.organizationId);
+    const ownDrivers = snapshot.drivers.filter((driver) => driver.userId === user.id);
     const ownTruckIds = new Set(ownDrivers.map((driver) => driver.assignedTruckId).filter((id): id is string => Boolean(id)));
-    const ownTrucks = snapshot.trucks.filter((truck) => truck.organizationId === user.organizationId);
-    for (const truck of ownTrucks) ownTruckIds.add(truck.id);
+    const ownTrucks = snapshot.trucks.filter((truck) => ownTruckIds.has(truck.id));
 
     const ownShipments = user.role === 'BUSINESS'
       ? snapshot.shipments.filter((shipment) => shipment.shipperId === user.organizationId)
@@ -52,7 +51,9 @@ miscRouter.get(
     res.json({
       ...snapshot,
       organizations: snapshot.organizations.filter((organization) => organization.id === user.organizationId),
-      users: snapshot.users.filter((member) => member.organizationId === user.organizationId),
+      users: user.role === 'DRIVER'
+        ? snapshot.users.filter((member) => member.id === user.id)
+        : snapshot.users.filter((member) => member.organizationId === user.organizationId),
       drivers: ownDrivers,
       trucks: user.role === 'BUSINESS' ? snapshot.trucks : ownTrucks,
       // Capacity availability is shared across the network; shipment/customer data is not.
