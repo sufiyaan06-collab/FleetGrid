@@ -10,16 +10,32 @@ import { Login } from './views/Login';
 import { RoleSelect } from './views/RoleSelect';
 
 function Router() {
-  const { mode } = useFleet();
-  if (mode === 'LANDING') return <LandingView />;
-  if (mode === 'REGISTER') return <Register />;
-  if (mode === 'LOGIN') return <Login />;
-  if (mode === 'CONTROL_TOWER') return <ControlTower />;
-  if (mode === 'LIVE_MAP') return <LiveMapView />;
-  if (mode === 'PAYMENTS') return <PaymentsView />;
-  if (mode === 'BUSINESS') return <Business />;
-  if (mode === 'DRIVER') return <Driver />;
-  return <RoleSelect />;
+  const { mode, session, signOut } = useFleet();
+  let screen;
+  if (mode === 'LANDING') screen = <LandingView />;
+  else if (mode === 'REGISTER') screen = <Register />;
+  else if (mode === 'LOGIN') screen = <Login />;
+  else if (mode === 'CONTROL_TOWER') screen = <ControlTower />;
+  else if (mode === 'LIVE_MAP') screen = <LiveMapView />;
+  else if (mode === 'PAYMENTS') screen = <PaymentsView />;
+  else if (mode === 'BUSINESS') screen = <Business />;
+  else if (mode === 'DRIVER') screen = <Driver />;
+  else screen = <RoleSelect />;
+
+  return (
+    <>
+      {screen}
+      {session?.mode === 'authenticated' && (
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="fixed right-4 top-4 z-[100] rounded-md border border-base-600 bg-base-900/90 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-300 shadow-lg transition-colors hover:border-danger/50 hover:text-danger"
+        >
+          Sign out
+        </button>
+      )}
+    </>
+  );
 }
 
 export default function App() {
