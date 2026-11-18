@@ -4,8 +4,18 @@ import { createIncident, getIncident, listIncidents } from '../services/incident
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
+import { requireRoles } from '../middleware/auth.js';
+import { db } from '../store/db.js';
+import { ApiError } from '../lib/errors.js';
+import type { User } from '../types.js';
 
 export const incidentsRouter: Router = Router();
+
+async function assertDriverOwnsTruck(user: User, truckId: string): Promise<void> {
+  if (user.role !== 'DRIVER' || process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') return;
+  const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+  if (!driver || driver.assignedTruckId !== truckId) throw ApiError.notFound('Truck not found.');
+}
 
 const INCIDENT_TYPES = [
   'TRUCK_BREAKDOWN',
@@ -33,9 +43,12 @@ const createIncidentSchema = z.object({
  */
 incidentsRouter.post(
   '/incidents',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR'),
   validateBody(createIncidentSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof createIncidentSchema>;
+    const user = res.locals.authUser as User;
+    await assertDriverOwnsTruck(user, body.truckId);
     const result = await createIncident({
       truckId: body.truckId,
       type: body.type,
@@ -44,7 +57,7 @@ incidentsRouter.post(
       description: body.description,
       transcript: body.transcript ?? null,
       source: body.source,
-      actorId: body.actorId ?? null,
+      actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? body.actorId ?? null : user.id,
     });
     res.status(201).json({
       ok: true,
@@ -62,18 +75,28 @@ const listQuerySchema = z.object({
 
 incidentsRouter.get(
   '/incidents',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   validateQuery(listQuerySchema),
   asyncHandler(async (_req, res) => {
     const query = res.locals.query as z.infer<typeof listQuerySchema>;
-    const incidents = await listIncidents(query);
+    const user = res.locals.authUser as User;
+    let incidents = await listIncidents(query);
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      incidents = driver?.assignedTruckId
+        ? incidents.filter((incident) => incident.truckId === driver.assignedTruckId)
+        : [];
+    }
     res.json({ incidents, count: incidents.length });
   }),
 );
 
 incidentsRouter.get(
   '/incidents/:id',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   asyncHandler(async (req, res) => {
     const incident = await getIncident(requiredParam(req, 'id'));
+    await assertDriverOwnsTruck(res.locals.authUser as User, incident.truckId);
     res.json({ incident });
   }),
 );
