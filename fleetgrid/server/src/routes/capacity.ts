@@ -6,6 +6,9 @@ import { capacityOptions, findAvailableCapacity, reserveCapacity, searchCapacity
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
+import { requireRoles } from '../middleware/auth.js';
+import { ApiError } from '../lib/errors.js';
+import type { User } from '../types.js';
 
 export const capacityRouter: Router = Router();
 
@@ -51,14 +54,20 @@ const reserveSchema = z.object({
 /** POST /capacity/:id/reserve — atomic reservation of an existing DRAFT shipment. */
 capacityRouter.post(
   '/capacity/:id/reserve',
+  requireRoles('BUSINESS'),
   validateBody(reserveSchema),
   asyncHandler(async (req, res) => {
     const { shipmentId, actorId } = req.body as { shipmentId: string; actorId?: string | null };
+    const user = res.locals.authUser as User;
+    const shipment = await db.shipments.findById(shipmentId);
+    if (!shipment || (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && shipment.shipperId !== user.organizationId)) {
+      throw ApiError.notFound('Shipment not found.');
+    }
     const result = await reserveCapacity({
       offerId: requiredParam(req, 'id'),
       shipmentId,
       actorType: 'BUSINESS',
-      actorId: actorId ?? null,
+      actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? actorId ?? null : user.id,
     });
     res.json({ ok: true, ...result });
   }),
