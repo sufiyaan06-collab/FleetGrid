@@ -7,6 +7,7 @@ import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
 import { requireRoles } from '../middleware/auth.js';
 import type { User } from '../types.js';
+import { ApiError } from '../lib/errors.js';
 
 export const trucksRouter: Router = Router();
 
@@ -61,7 +62,7 @@ trucksRouter.get(
     const user = res.locals.authUser as User;
     if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && user.role === 'DRIVER') {
       const ownDriver = (await db.drivers.find((driver) => driver.userId === user.id))[0];
-      if (!ownDriver || ownDriver.assignedTruckId !== truck.id) throw new Error('Truck not found.');
+      if (!ownDriver || ownDriver.assignedTruckId !== truck.id) throw ApiError.notFound('Truck not found.');
     }
     const allShipments = await db.shipments.find((s) => s.truckId === truck.id);
     const shipments = process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' || ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)
@@ -76,7 +77,13 @@ trucksRouter.get(
       : user.role === 'DRIVER'
         ? await db.incidents.find((i) => i.truckId === truck.id)
         : [];
-    res.json({ truck, driver: driver ?? null, capacityOffer: offer, shipments, incidents });
+    res.json({
+      truck,
+      driver: driver ? { id: driver.id, name: driver.name, status: driver.status, assignedTruckId: driver.assignedTruckId } : null,
+      capacityOffer: offer,
+      shipments,
+      incidents,
+    });
   }),
 );
 
@@ -89,7 +96,7 @@ trucksRouter.post(
     const user = res.locals.authUser as User;
     if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
       const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
-      if (!driver) throw new Error('No driver profile is linked to this account.');
+      if (!driver) throw ApiError.notFound('No driver profile is linked to this account.');
       const truck = await createTruck({
         ...body,
         organizationId: user.organizationId,
@@ -120,7 +127,7 @@ trucksRouter.post(
     if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
       const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
       const truck = await db.trucks.findById(id);
-      if (!driver || !truck || driver.assignedTruckId !== truck.id) throw new Error('Truck not found.');
+      if (!driver || !truck || driver.assignedTruckId !== truck.id) throw ApiError.notFound('Truck not found.');
       actingDriverId = driver.id;
     }
     const result = await departTruck(id, actingDriverId);
@@ -143,7 +150,7 @@ trucksRouter.post(
     const user = res.locals.authUser as User;
     if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
       const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
-      if (!driver || driver.assignedTruckId !== id) throw new Error('Truck not found.');
+      if (!driver || driver.assignedTruckId !== id) throw ApiError.notFound('Truck not found.');
     }
     const { lat, lng, latitude, longitude, speed_kmph, speedKmph, heading } = req.body ?? {};
     const finalLat = lat ?? latitude;
