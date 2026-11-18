@@ -278,12 +278,12 @@ authRouter.post(
   }),
 );
 
-authRouter.get(
+authRouter.post(
   '/auth/verify-email',
+  validateBody(z.object({ token: z.string().min(32).max(200) })),
   authRateLimit({ windowMs: 60 * 60 * 1000, max: 20, message: 'Too many verification attempts. Please try again later.' }),
   asyncHandler(async (req, res) => {
-    const token = typeof req.query.token === 'string' ? req.query.token : '';
-    if (!token) throw AuthApiError.badRequest('Verification token is required.');
+    const token = (req.body as { token: string }).token;
     const tokenHash = hashOpaqueToken(token);
     const matches = await db.authAccounts.find((account) => account.verificationTokenHash === tokenHash);
     const account = matches[0];
