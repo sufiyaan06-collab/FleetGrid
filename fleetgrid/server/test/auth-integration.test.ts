@@ -116,7 +116,7 @@ try {
   });
   assert.equal(driverRecoveryWrite.status, 403, 'driver cannot create operations recovery plans');
 
-  const driverPaymentIntent = await request('/payments/create', {
+  const driverPaymentIntent = await request('/payments/dodo/checkout', {
     method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR' }),
   });
