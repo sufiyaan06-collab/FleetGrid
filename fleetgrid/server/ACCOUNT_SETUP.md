@@ -44,3 +44,20 @@ The command stores only a password hash, marks the administrator-provisioned ope
 - Keep `AUTO_SEED=false` so a fresh production database does not receive demonstration shipments or drivers.
 - Do not enable deployment until the production database has been backed up and the new Node PostgreSQL store has a reviewed migration plan.
 - Email verification and real Dodo payment settlement are separate integrations; configure and test them independently.
+
+## JSON-to-PostgreSQL migration
+
+The Node API can use PostgreSQL, but the application must not be switched to a new empty database while existing JSON records are still needed.
+
+1. Take a full backup of the current JSON data directory and keep the original files unchanged.
+2. Make the backup available to the migration environment and set `DATA_DIR` to that directory.
+3. Set `DATABASE_URL` to the intended Render PostgreSQL connection string. Do not paste it into source control or a chat.
+4. Install server dependencies with `npm --prefix fleetgrid/server install`.
+5. Run a dry run first: `npm --prefix fleetgrid/server run migrate:postgres`.
+6. Confirm the printed collection counts match the backup and the target `fleetgrid_records` table is empty.
+7. Only after reviewing the backup and dry-run output, run `npm --prefix fleetgrid/server run migrate:postgres -- --apply`.
+8. Verify the imported record counts and application workflows before changing the production service to use PostgreSQL.
+
+The migration utility refuses to write if the target table already contains records, checks record IDs and duplicate account emails, and wraps all inserts in one database transaction. It never edits or deletes the source JSON files. If the dry run or import reports an error, stop and investigate rather than clearing the target database.
+
+The migration must be coordinated with a maintenance window or a write freeze so records are not created or changed between taking the backup and switching the application. Do not run the import against a database that already contains live application records.
