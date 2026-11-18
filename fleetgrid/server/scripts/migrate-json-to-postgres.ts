@@ -63,6 +63,18 @@ const loaded = await Promise.all(
 );
 
 const accountRows = loaded.find((item) => item.collection === 'auth-accounts')?.rows ?? [];
+const paymentRows = loaded.find((item) => item.collection === 'payments')?.rows ?? [];
+const activeShipmentPayments = new Set<string>();
+for (const payment of paymentRows) {
+  const shipmentId = typeof payment.shipmentId === 'string' ? payment.shipmentId : '';
+  const status = typeof payment.status === 'string' ? payment.status : '';
+  if (shipmentId && ['CREATED', 'PENDING', 'PAID'].includes(status)) {
+    if (activeShipmentPayments.has(shipmentId)) {
+      throw new Error(`Multiple active payments exist for shipment ${shipmentId}. Resolve duplicates before migration.`);
+    }
+    activeShipmentPayments.add(shipmentId);
+  }
+}
 const emails = new Set<string>();
 for (const account of accountRows) {
   const email = typeof account.email === 'string' ? account.email.trim().toLowerCase() : '';
