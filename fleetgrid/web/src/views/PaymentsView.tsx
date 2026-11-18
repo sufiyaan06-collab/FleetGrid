@@ -96,7 +96,7 @@ export function PaymentsView() {
               </span>
             </div>
             <p className="mt-0.5 text-xs text-ink-400">
-              Deterministic escrow settlement, instant multi-device webhook verification & cargo confirmation
+              Secure provider checkout; payment status changes only after verified provider confirmation
             </p>
           </div>
 
@@ -113,10 +113,10 @@ export function PaymentsView() {
 
         {/* Top Operational Metrics */}
         <div className="panel grid grid-cols-2 divide-x divide-base-600 sm:grid-cols-4">
-          <Metric label="Total Settled" value={`₹${totalSettled.toLocaleString('en-IN')}`} tone="healthy" hint="Disbursed to carriers" />
-          <Metric label="Paid Invoices" value={paidCount} tone="accent" hint="Authoritative receipts" />
+          <Metric label="Total Paid" value={`₹${totalSettled.toLocaleString('en-IN')}`} tone="healthy" hint="Provider-confirmed payments" />
+          <Metric label="Paid Invoices" value={paidCount} tone="accent" hint="Provider-confirmed receipts" />
           <Metric label="Awaiting Payment" value={pendingCount} tone="warn" hint="Active reservations" />
-          <Metric label="Escrow SLA" value="Instant" tone="neutral" hint="Zero settlement delay" />
+          <Metric label="Escrow SLA" value="Webhook" tone="neutral" hint="Provider confirmation required" />
         </div>
 
         {/* Workspace: Checkout & Payment Terminal */}
@@ -128,7 +128,7 @@ export function PaymentsView() {
               title="Freight Capacity Settlement"
               actions={
                 <span className="font-mono text-2xs text-healthy">
-                  ● Ready for checkout
+                  ● Provider connection required
                 </span>
               }
             >
@@ -416,7 +416,7 @@ export function PaymentsView() {
               </div>
 
               <div className="rounded border border-healthy/30 bg-healthy/5 p-3 text-2xs text-healthy">
-                ✓ Cargo capacity has been authoritatively locked. The linked shipment has transitioned to <strong>CONFIRMED</strong> on all driver and control tower dashboards.
+                This receipt is available only for a payment confirmed by the payment provider.
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
