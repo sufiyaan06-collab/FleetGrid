@@ -22,8 +22,8 @@ healthRouter.get(
       service: 'fleetgrid-api',
       version: '0.1.0',
       time: nowIso(),
-      storage: 'json-file',
-      dataDir: config.dataDir,
+      storage: db.storage,
+      ...(db.storage === 'json-file' ? { dataDir: config.dataDir } : {}),
       realtime: { path: '/realtime', connectedClients: hub.clientCount() },
       counts: {
         trucks: trucks.length,
