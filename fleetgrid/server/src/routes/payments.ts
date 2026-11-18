@@ -3,12 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
-import {
-  createDodoCheckout,
-  confirmDodoPayment,
-  getPayment,
-  listPayments,
-} from '../services/payments.js';
+import { createDodoCheckout, getPayment, listPayments } from '../services/payments.js';
 
 export const paymentsRouter: Router = Router();
 
@@ -22,7 +17,6 @@ const createDodoCheckoutSchema = z.object({
   returnUrl: z.string().url().optional(),
 });
 
-/** POST /payments/dodo/checkout — Generates a Dodo Payments checkout session. */
 paymentsRouter.post(
   '/payments/dodo/checkout',
   validateBody(createDodoCheckoutSchema),
@@ -32,28 +26,17 @@ paymentsRouter.post(
   }),
 );
 
-const confirmDodoPaymentSchema = z.object({
-  paymentId: z.string().min(2),
-  providerReference: z.string().min(2).optional(),
-  paymentMethod: z.string().optional(),
+// A browser redirect or client request is not proof that money was received.
+// Only a signature-verified provider webhook may transition a payment to PAID.
+paymentsRouter.post('/payments/dodo/confirm', (_req, res) => {
+  res.status(409).json({
+    error: {
+      code: 'PROVIDER_CONFIRMATION_REQUIRED',
+      message: 'Payment confirmation is only accepted from a verified Dodo Payments webhook.',
+    },
+  });
 });
 
-/** POST /payments/dodo/confirm — Finalizes payment status and confirms associated shipment. */
-paymentsRouter.post(
-  '/payments/dodo/confirm',
-  validateBody(confirmDodoPaymentSchema),
-  asyncHandler(async (req, res) => {
-    const { paymentId, providerReference, paymentMethod } = req.body;
-    const result = await confirmDodoPayment(paymentId, providerReference, paymentMethod);
-    res.json({
-      status: 'success',
-      payment: result.payment,
-      shipment: result.shipment,
-    });
-  }),
-);
-
-/** GET /payments — Lists all payment records. */
 paymentsRouter.get(
   '/payments',
   asyncHandler(async (_req, res) => {
@@ -61,7 +44,6 @@ paymentsRouter.get(
   }),
 );
 
-/** GET /payments/:id — Gets a specific payment by ID. */
 paymentsRouter.get(
   '/payments/:id',
   asyncHandler(async (req, res) => {
@@ -70,23 +52,13 @@ paymentsRouter.get(
   }),
 );
 
-/** POST /payments/dodo/webhook — Handles Dodo Payments incoming webhooks. */
-paymentsRouter.post(
-  '/payments/dodo/webhook',
-  asyncHandler(async (req, res) => {
-    const payload = req.body;
-    const paymentId = payload?.data?.payment_id || payload?.payment_id || payload?.data?.id;
-
-    if (paymentId) {
-      try {
-        await confirmDodoPayment(paymentId, payload?.id, 'Dodo Webhook');
-        res.json({ received: true, status: 'processed', paymentId });
-        return;
-      } catch (err) {
-        console.warn('[DodoWebhook] Auto-confirm error:', (err as Error).message);
-      }
-    }
-
-    res.json({ received: true, note: 'Webhook payload received' });
-  }),
-);
+// Do not trust unsigned webhook payloads. Signature verification must be
+// configured against Dodo's webhook secret before processing any event.
+paymentsRouter.post('/payments/dodo/webhook', (_req, res) => {
+  res.status(503).json({
+    error: {
+      code: 'WEBHOOK_NOT_CONFIGURED',
+      message: 'Dodo webhook signature verification is not configured. No payment status was changed.',
+    },
+  });
+});
