@@ -44,10 +44,27 @@ eventsRouter.post(
     if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && user.role === 'DRIVER') {
       const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
       if (!driver || (body.truckId && driver.assignedTruckId !== body.truckId)) throw ApiError.notFound('Event resource not found.');
+      if (body.shipmentId) {
+        const shipment = await db.shipments.findById(body.shipmentId);
+        if (!shipment || shipment.truckId !== driver.assignedTruckId) throw ApiError.notFound('Event resource not found.');
+      }
       if (body.incidentId) {
         const incident = await db.incidents.findById(body.incidentId);
         if (!incident || incident.truckId !== driver.assignedTruckId) throw ApiError.notFound('Event resource not found.');
       }
+    }
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && user.role === 'BUSINESS' && body.truckId) {
+      const linked = await db.shipments.find((shipment) =>
+        shipment.shipperId === user.organizationId && shipment.truckId === body.truckId,
+      );
+      if (!linked.length) throw ApiError.notFound('Event resource not found.');
+    }
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && user.role === 'BUSINESS' && body.incidentId) {
+      const incident = await db.incidents.findById(body.incidentId);
+      const linked = incident
+        ? await db.shipments.find((shipment) => shipment.shipperId === user.organizationId && shipment.truckId === incident.truckId)
+        : [];
+      if (!incident || !linked.length) throw ApiError.notFound('Event resource not found.');
     }
 
     const event = await recordEvent({
