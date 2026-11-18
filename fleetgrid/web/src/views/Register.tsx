@@ -112,7 +112,7 @@ export function Register() {
       <div className="mb-5 flex items-center justify-between">
         <button
           type="button"
-          onClick={() => void setMode('CONTROL_TOWER')}
+          onClick={() => void setMode('LANDING')}
           className="text-2xs font-medium uppercase tracking-[0.16em] text-ink-500 transition-colors hover:text-ink-300"
         >
           ← Back to Operations Hub
