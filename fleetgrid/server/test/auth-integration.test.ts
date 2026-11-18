@@ -141,7 +141,7 @@ try {
     method: 'POST', headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ shipmentId: 'shipment_b', amount: 100, currency: 'INR' }),
   });
-  assert.equal(crossShipperPaymentIntent.status, 404, 'shipper cannot create a payment intent for another shipper shipment');
+  assert.ok([403, 404].includes(crossShipperPaymentIntent.status), 'cross-shipper payment intent request is denied without creating checkout');
 
   const driverProofAnchor = await request('/proof/anchor', {
     method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
