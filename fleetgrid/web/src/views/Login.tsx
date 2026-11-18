@@ -14,21 +14,32 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [verificationToken, setVerificationToken] = useState<string | null>(null);
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get('token');
     if (!token) return;
-    let active = true;
-    void api.verifyEmail(token).then((result) => {
-      if (active) setNotice(result.message);
-    }).catch((err) => {
-      if (active) setError((err as Error).message);
-    }).finally(() => {
-      // Remove the one-time token from the address bar after attempting verification.
-      window.history.replaceState({}, document.title, window.location.pathname);
-    });
-    return () => { active = false; };
+    // Do not consume verification links on page load: email security scanners
+    // often prefetch links. Require the user to press the Verify email button.
+    setVerificationToken(token);
+    setNotice('Your verification link is ready. Select Verify email to finish setting up your account.');
+    window.history.replaceState({}, document.title, window.location.pathname);
   }, []);
+
+  const verifyEmail = async () => {
+    if (!verificationToken) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.verifyEmail(verificationToken);
+      setNotice(result.message);
+      setVerificationToken(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -81,6 +92,11 @@ export function Login() {
         </div>
         {error && <div className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
         {notice && <div className="mt-4 rounded-md border border-healthy/40 bg-healthy/10 px-3 py-2 text-xs text-healthy">{notice}</div>}
+        {verificationToken && (
+          <button type="button" disabled={busy} onClick={() => void verifyEmail()} className="mt-4 w-full rounded-md border border-healthy/50 bg-healthy/15 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-healthy hover:bg-healthy/25 disabled:opacity-50">
+            {busy ? 'Verifying…' : 'Verify email'}
+          </button>
+        )}
         <button type="submit" disabled={busy} className={cn('mt-5 w-full rounded-md border border-healthy/40 bg-healthy/10 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-healthy hover:bg-healthy/20 disabled:opacity-50')}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
