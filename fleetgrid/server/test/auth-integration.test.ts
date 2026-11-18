@@ -158,6 +158,9 @@ try {
   assert.deepEqual(driverLocations.map((truck) => truck.id), ['truck_a'], 'driver live map is limited to their assigned truck');
   const otherDriverTruckDetail = await request('/trucks/truck_other', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(otherDriverTruckDetail.status, 404, 'driver cannot open another drivers truck detail');
+  const driverCapacityBrowse = await request('/capacity', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(driverCapacityBrowse.status, 403, 'drivers cannot browse other fleets capacity and driver listings');
+
   const shipperOtherTruckDetail = await request('/trucks/truck_other', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
   const shipperOtherTruck = await shipperOtherTruckDetail.json() as { truck: { driverId: string | null }; driver: unknown };
   assert.equal(shipperOtherTruck.truck.driverId, null, 'shipper cannot read another fleets private driver link');
@@ -214,7 +217,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, login rejection, cross-account shipment isolation, driver account, truck-list and live-location isolation, suspended organisation lockout, immutable event-log write restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, immutable event-log write restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
