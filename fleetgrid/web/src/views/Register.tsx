@@ -60,7 +60,7 @@ const labelCls = 'mb-1 block text-[10px] font-medium uppercase tracking-[0.12em]
  * email-verification link; users cannot enter the application until verified.
  */
 export function Register() {
-  const { setMode, adoptAccount, connection, error: connectionError } = useFleet();
+  const { setMode, connection, error: connectionError } = useFleet();
   const [kind, setKind] = useState<Kind>('BUSINESS');
   const [form, setForm] = useState<FormState>(EMPTY);
   const [busy, setBusy] = useState(false);
