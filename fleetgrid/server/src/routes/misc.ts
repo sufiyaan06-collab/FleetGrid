@@ -55,7 +55,7 @@ miscRouter.get(
         ? snapshot.users.filter((member) => member.id === user.id)
         : snapshot.users.filter((member) => member.organizationId === user.organizationId),
       drivers: ownDrivers,
-      trucks: user.role === 'BUSINESS' ? snapshot.trucks : ownTrucks,
+      trucks: user.role === 'BUSINESS' ? snapshot.trucks.map((truck) => ({ ...truck, driverId: null })) : ownTrucks,
       // Capacity availability is shared across the network; shipment/customer data is not.
       capacityOffers: user.role === 'BUSINESS'
         ? snapshot.capacityOffers
