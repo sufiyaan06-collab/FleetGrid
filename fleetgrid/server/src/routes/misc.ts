@@ -6,6 +6,7 @@ import { validateBody } from '../middleware/validate.js';
 import { TOOL_CATALOG } from '../services/agentTools.js';
 import { AGENT_TOOL_CONTRACT } from '../services/agentToolSchema.js';
 import type { User } from '../types.js';
+import { requireRoles } from '../middleware/auth.js';
 
 export const miscRouter: Router = Router();
 
@@ -89,6 +90,7 @@ const createOrgSchema = z.object({
 
 miscRouter.post(
   '/organizations',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(createOrgSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof createOrgSchema>;
@@ -105,6 +107,7 @@ miscRouter.post(
 
 miscRouter.get(
   '/organizations',
+  requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   asyncHandler(async (_req, res) => {
     res.json({ organizations: await db.organizations.get() });
   }),
@@ -117,7 +120,15 @@ miscRouter.get(
 miscRouter.get(
   '/payments',
   asyncHandler(async (_req, res) => {
-    const payments = await db.payments.get();
+    const user = res.locals.authUser as User;
+    const allPayments = await db.payments.get();
+    const shipments = await db.shipments.get();
+    const ownShipmentIds = new Set(shipments.filter((shipment) => shipment.shipperId === user.organizationId).map((shipment) => shipment.id));
+    const payments = user.role === 'CONTROL_TOWER' || user.role === 'OPERATOR' || user.role === 'VERIFIER'
+      ? allPayments
+      : user.role === 'BUSINESS'
+        ? allPayments.filter((payment) => Boolean(payment.shipmentId && ownShipmentIds.has(payment.shipmentId)))
+        : [];
     res.json({
       payments,
       note: 'Payment provider integration is a later phase. Seeded rows are labelled DEMO_PLACEHOLDER.',
@@ -128,8 +139,12 @@ miscRouter.get(
 miscRouter.get(
   '/notifications',
   asyncHandler(async (_req, res) => {
+    const user = res.locals.authUser as User;
+    const notifications = user.role === 'CONTROL_TOWER' || user.role === 'OPERATOR' || user.role === 'VERIFIER'
+      ? await db.notifications.get()
+      : await db.notifications.find((notification) => notification.recipientId === user.id);
     res.json({
-      notifications: await db.notifications.get(),
+      notifications,
       note: 'Notification delivery is a later phase; rows are stored as PENDING.',
     });
   }),
