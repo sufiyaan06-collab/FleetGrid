@@ -226,6 +226,7 @@ export interface Payment {
   currency: string;
   status: PaymentStatus;
   providerReference: string | null;
+  providerPaymentId?: string | null;
   checkoutUrl?: string | null;
   customerName?: string | null;
   customerEmail?: string | null;
