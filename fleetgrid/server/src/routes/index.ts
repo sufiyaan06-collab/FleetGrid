@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authRouter } from './auth.js';
+import { requireAuthenticated } from '../middleware/auth.js';
 import { capacityRouter } from './capacity.js';
 import { demoRouter } from './demo.js';
 import { driverRouter } from './driver.js';
@@ -18,6 +19,8 @@ export function buildRouter(): Router {
 
   router.use(healthRouter);
   router.use(authRouter);
+  // Every operational API is private. Only health and auth endpoints are public.
+  router.use(requireAuthenticated);
   router.use(miscRouter);
   router.use(trucksRouter);
   router.use(capacityRouter);
