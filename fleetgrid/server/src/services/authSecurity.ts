@@ -44,16 +44,20 @@ export const issueSessionToken = (): IssuedToken => issueToken(SESSION_TTL_MS);
 export const issueVerificationToken = (): IssuedToken => issueToken(VERIFY_TTL_MS);
 
 export function setSessionCookie(res: { setHeader(name: string, value: string): void }, token: string): void {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  const production = process.env.NODE_ENV === 'production';
+  const secure = production ? '; Secure' : '';
+  const sameSite = production ? 'None' : 'Lax';
   res.setHeader(
     'Set-Cookie',
-    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=None; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure}`,
+    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure}`,
   );
 }
 
 export function clearSessionCookie(res: { setHeader(name: string, value: string): void }): void {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=None; Max-Age=0${secure}`);
+  const production = process.env.NODE_ENV === 'production';
+  const secure = production ? '; Secure' : '';
+  const sameSite = production ? 'None' : 'Lax';
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure}`);
 }
 
 export function readSessionCookie(cookieHeader?: string): string | null {
