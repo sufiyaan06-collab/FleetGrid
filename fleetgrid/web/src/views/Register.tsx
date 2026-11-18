@@ -322,6 +322,9 @@ export function Register() {
           You must verify your email before signing in. Passwords are never stored as plain text.
         </p>
       </form>
+      <button type="button" onClick={() => void setMode('LOGIN')} className="mt-4 text-center text-xs text-healthy hover:text-healthy/80">
+        Already have an account? Sign in
+      </button>
     </div>
   );
 }
