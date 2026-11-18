@@ -150,6 +150,19 @@ try {
   assert.deepEqual(driverState.users.map((u) => u.id), ['driver_user'], 'driver cannot see another driver account in the same fleet organization');
   assert.deepEqual(driverState.drivers.map((d) => d.id), ['driver_a'], 'driver sees only their own driver profile');
   assert.deepEqual(driverState.trucks.map((t) => t.id), ['truck_a'], 'driver sees only their assigned truck in private state');
+  const driverTruckListResponse = await request('/trucks', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  const driverTruckList = await driverTruckListResponse.json() as { trucks: Array<{ id: string }> };
+  assert.deepEqual(driverTruckList.trucks.map((truck) => truck.id), ['truck_a'], 'driver cannot enumerate other drivers trucks through the truck list');
+  const driverLocationsResponse = await request('/trucks/locations', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  const driverLocations = await driverLocationsResponse.json() as Array<{ id: string }>;
+  assert.deepEqual(driverLocations.map((truck) => truck.id), ['truck_a'], 'driver live map is limited to their assigned truck');
+  const otherDriverTruckDetail = await request('/trucks/truck_other', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(otherDriverTruckDetail.status, 404, 'driver cannot open another drivers truck detail');
+  const shipperOtherTruckDetail = await request('/trucks/truck_other', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const shipperOtherTruck = await shipperOtherTruckDetail.json() as { truck: { driverId: string | null }; driver: unknown };
+  assert.equal(shipperOtherTruck.truck.driverId, null, 'shipper cannot read another fleets private driver link');
+  assert.equal(shipperOtherTruck.driver, null, 'shipper cannot read another fleets driver profile');
+
 
   const driverRecoveryWrite = await request('/recovery-plans', {
     method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
@@ -201,7 +214,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, login rejection, cross-account shipment isolation, driver account and truck isolation, suspended organisation lockout, immutable event-log write restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, login rejection, cross-account shipment isolation, driver account, truck-list and live-location isolation, suspended organisation lockout, immutable event-log write restrictions, role restrictions, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
