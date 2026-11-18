@@ -46,7 +46,7 @@ miscRouter.get(
     const ownIncidents = snapshot.incidents.filter((incident) => ownTruckIds.has(incident.truckId));
     const ownIncidentIds = new Set(ownIncidents.map((incident) => incident.id));
     const visibleTruckIds = user.role === 'BUSINESS'
-      ? new Set(snapshot.trucks.map((truck) => truck.id))
+      ? new Set(ownShipments.map((shipment) => shipment.truckId).filter((id): id is string => Boolean(id)))
       : ownTruckIds;
 
     res.json({
