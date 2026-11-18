@@ -26,6 +26,7 @@ const capacityQuerySchema = z.object({
 /** GET /capacity — compatible open capacity only, unless includeAll=true. */
 capacityRouter.get(
   '/capacity',
+  requireRoles('BUSINESS', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   validateQuery(capacityQuerySchema),
   asyncHandler(async (_req, res) => {
     const query = res.locals.query as z.infer<typeof capacityQuerySchema>;
@@ -87,6 +88,7 @@ const optionsQuerySchema = z.object({
  */
 capacityRouter.get(
   '/capacity/options',
+  requireRoles('BUSINESS', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   validateQuery(optionsQuerySchema),
   asyncHandler(async (_req, res) => {
     const query = res.locals.query as z.infer<typeof optionsQuerySchema>;
@@ -115,6 +117,7 @@ const nearbyQuerySchema = z.object({
  */
 capacityRouter.get(
   '/capacity/nearby',
+  requireRoles('BUSINESS', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   validateQuery(nearbyQuerySchema),
   asyncHandler(async (_req, res) => {
     const query = res.locals.query as z.infer<typeof nearbyQuerySchema>;
@@ -130,6 +133,7 @@ capacityRouter.get(
 
 capacityRouter.get(
   '/capacity/:id',
+  requireRoles('BUSINESS', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   asyncHandler(async (req, res) => {
     const offer = await db.capacityOffers.findById(requiredParam(req, 'id'));
     if (!offer) {
