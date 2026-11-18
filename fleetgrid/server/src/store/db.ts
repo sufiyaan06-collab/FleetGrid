@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { createJsonStore, dataFile, type Store } from './jsonStore.js';
 import { createPostgresStore, initializePostgres } from './postgresStore.js';
 import type {
+  AuthAccount,
   CapacityOffer,
   Driver,
   FleetSnapshot,
@@ -25,6 +26,8 @@ import type {
 export interface Db {
   organizations: Store<Organization>;
   users: Store<User>;
+  /** Private credentials and session hashes; deliberately excluded from snapshot(). */
+  authAccounts: Store<AuthAccount>;
   drivers: Store<Driver>;
   trucks: Store<Truck>;
   shipments: Store<Shipment>;
@@ -68,6 +71,7 @@ function build(dataDir: string): Db {
     },
     organizations: store<Organization>('organizations', 'organizations.json'),
     users: store<User>('users', 'users.json'),
+    authAccounts: store<AuthAccount>('auth-accounts', 'auth-accounts.json'),
     drivers: store<Driver>('drivers', 'drivers.json'),
     trucks: store<Truck>('trucks', 'trucks.json'),
     shipments: store<Shipment>('shipments', 'shipments.json'),
