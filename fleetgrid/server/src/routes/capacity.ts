@@ -78,7 +78,11 @@ capacityRouter.post(
       actorType: 'BUSINESS',
       actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? actorId ?? null : user.id,
     });
-    res.json({ ok: true, ...result });
+    res.json({
+      ok: true,
+      ...result,
+      truck: user.role === 'BUSINESS' ? { ...result.truck, driverId: null } : result.truck,
+    });
   }),
 );
 
