@@ -5,13 +5,26 @@ import { createTruck, departTruck, getTruck, listTrucks, updateTruckLocation } f
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
+import { requireRoles } from '../middleware/auth.js';
+import type { User } from '../types.js';
+import { ApiError } from '../lib/errors.js';
 
 export const trucksRouter: Router = Router();
 
 trucksRouter.get(
   '/trucks/locations',
   asyncHandler(async (_req, res) => {
-    const trucks = await listTrucks();
+    const user = res.locals.authUser as User;
+    let trucks = await listTrucks();
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      const ownTruckIds = new Set(driver?.assignedTruckId ? [driver.assignedTruckId] : []);
+      trucks = trucks.filter((truck) => ownTruckIds.has(truck.id));
+    } else if (user.role === 'BUSINESS' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const ownShipments = await db.shipments.find((shipment) => shipment.shipperId === user.organizationId);
+      const ownTruckIds = new Set(ownShipments.map((shipment) => shipment.truckId).filter((id): id is string => Boolean(id)));
+      trucks = trucks.filter((truck) => ownTruckIds.has(truck.id));
+    }
     res.json(
       trucks.map((t) => ({
         id: t.id,
@@ -48,7 +61,17 @@ const createTruckSchema = z.object({
 trucksRouter.get(
   '/trucks',
   asyncHandler(async (_req, res) => {
-    res.json({ trucks: await listTrucks() });
+    const user = res.locals.authUser as User;
+    let trucks = await listTrucks();
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      const ownTruckIds = new Set(driver?.assignedTruckId ? [driver.assignedTruckId] : []);
+      trucks = trucks.filter((truck) => ownTruckIds.has(truck.id));
+    } else if (user.role === 'BUSINESS' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      // Public fleet supply can be browsed, but another fleet's driver link is private.
+      trucks = trucks.map((truck) => ({ ...truck, driverId: null }));
+    }
+    res.json({ trucks });
   }),
 );
 
@@ -56,19 +79,56 @@ trucksRouter.get(
   '/trucks/:id',
   asyncHandler(async (req, res) => {
     const truck = await getTruck(requiredParam(req, 'id'));
-    const shipments = await db.shipments.find((s) => s.truckId === truck.id);
+    const user = res.locals.authUser as User;
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && user.role === 'DRIVER') {
+      const ownDriver = (await db.drivers.find((driver) => driver.userId === user.id))[0];
+      if (!ownDriver || ownDriver.assignedTruckId !== truck.id) throw ApiError.notFound('Truck not found.');
+    }
+    const allShipments = await db.shipments.find((s) => s.truckId === truck.id);
+    const shipments = process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' || ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)
+      ? allShipments
+      : user.role === 'BUSINESS'
+        ? allShipments.filter((shipment) => shipment.shipperId === user.organizationId)
+        : [];
     const offer = (await db.capacityOffers.find((o) => o.truckId === truck.id))[0] ?? null;
     const driver = truck.driverId ? await db.drivers.findById(truck.driverId) : undefined;
-    const incidents = await db.incidents.find((i) => i.truckId === truck.id);
-    res.json({ truck, driver: driver ?? null, capacityOffer: offer, shipments, incidents });
+    const incidents = process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' || ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)
+      ? await db.incidents.find((i) => i.truckId === truck.id)
+      : user.role === 'DRIVER'
+        ? await db.incidents.find((i) => i.truckId === truck.id)
+        : [];
+    const canViewDriver = ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role) ||
+      (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true');
+    res.json({
+      truck: user.role === 'BUSINESS' ? { ...truck, driverId: null } : truck,
+      driver: canViewDriver && driver ? { id: driver.id, name: driver.name, status: driver.status, assignedTruckId: driver.assignedTruckId } : null,
+      capacityOffer: offer,
+      shipments,
+      incidents,
+    });
   }),
 );
 
 trucksRouter.post(
   '/trucks',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR'),
   validateBody(createTruckSchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json({ truck: await createTruck(req.body) });
+    const body = req.body as z.infer<typeof createTruckSchema>;
+    const user = res.locals.authUser as User;
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      if (!driver) throw ApiError.notFound('No driver profile is linked to this account.');
+      const truck = await createTruck({
+        ...body,
+        organizationId: user.organizationId,
+        driverId: driver.id,
+      });
+      await db.drivers.update(driver.id, { assignedTruckId: truck.id });
+      res.status(201).json({ truck });
+      return;
+    }
+    res.status(201).json({ truck: await createTruck(body) });
   }),
 );
 
@@ -79,10 +139,27 @@ const departSchema = z.object({
 /** POST /trucks/:id/depart — truck ASSIGNED → IN_TRANSIT, shipments → IN_TRANSIT. */
 trucksRouter.post(
   '/trucks/:id/depart',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR'),
   validateBody(departSchema),
   asyncHandler(async (req, res) => {
     const { driverId } = req.body as { driverId?: string | null };
-    const result = await departTruck(requiredParam(req, 'id'), driverId ?? null);
+    const id = requiredParam(req, 'id');
+    const user = res.locals.authUser as User;
+    let actorId = driverId ?? null;
+    let actorType: 'DRIVER' | 'OPERATOR' = 'DRIVER';
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      if (user.role === 'DRIVER') {
+        const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+        const truck = await db.trucks.findById(id);
+        if (!driver || !truck || driver.assignedTruckId !== truck.id) throw ApiError.notFound('Truck not found.');
+        actorId = driver.id;
+      } else {
+        // Operations identity comes from the authenticated session, never the request body.
+        actorId = user.id;
+        actorType = 'OPERATOR';
+      }
+    }
+    const result = await departTruck(id, actorId, actorType);
     res.json({
       ok: true,
       truck: result.truck,
@@ -96,8 +173,14 @@ trucksRouter.post(
 /** POST /trucks/:id/location — updates GPS coordinates & heading and broadcasts over websocket. */
 trucksRouter.post(
   '/trucks/:id/location',
+  requireRoles('DRIVER', 'CONTROL_TOWER', 'OPERATOR'),
   asyncHandler(async (req, res) => {
     const id = requiredParam(req, 'id');
+    const user = res.locals.authUser as User;
+    if (user.role === 'DRIVER' && process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') {
+      const driver = (await db.drivers.find((item) => item.userId === user.id))[0];
+      if (!driver || driver.assignedTruckId !== id) throw ApiError.notFound('Truck not found.');
+    }
     const { lat, lng, latitude, longitude, speed_kmph, speedKmph, heading } = req.body ?? {};
     const finalLat = lat ?? latitude;
     const finalLng = lng ?? longitude;

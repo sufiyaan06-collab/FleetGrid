@@ -1,44 +1,38 @@
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import cors from 'cors';
 import express from 'express';
 import { config, serverRoot } from './config.js';
+import { db } from './store/db.js';
 import { ensureSeeded } from './services/demo.js';
 import { hub } from './services/realtime.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { buildRouter, ENDPOINT_INDEX } from './routes/index.js';
-
-// Auto-load .env file into process.env
-const envPath = resolve(serverRoot, '.env');
-if (existsSync(envPath)) {
-  try {
-    const lines = readFileSync(envPath, 'utf8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const idx = trimmed.indexOf('=');
-      if (idx > 0) {
-        const key = trimmed.slice(0, idx).trim();
-        const val = trimmed.slice(idx + 1).trim();
-        if (!process.env[key]) {
-          process.env[key] = val;
-        }
-      }
-    }
-  } catch {}
-}
 
 export function createApp(): express.Express {
   const app = express();
 
   app.use(
     cors({
-      origin: config.corsOrigins.includes('*') ? true : config.corsOrigins,
-      credentials: false,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (config.corsOrigins.includes('*') && process.env.NODE_ENV !== 'production') return callback(null, true);
+        if (config.corsOrigins.includes(origin)) return callback(null, true);
+        return callback(null, false);
+      },
+      credentials: true,
     }),
   );
-  app.use(express.json({ limit: '256kb' }));
+  app.use(express.json({
+    limit: '256kb',
+    verify: (req, _res, buffer) => {
+      // Dodo signs the exact request bytes. Preserve the raw body before JSON parsing.
+      if (req.url?.split('?')[0] === '/payments/dodo/webhook') {
+        Object.assign(req, { rawBody: buffer.toString('utf8') });
+      }
+    },
+  }));
 
   const webDist = resolve(serverRoot, '../web/dist');
   const hasWeb = existsSync(webDist);
@@ -108,6 +102,9 @@ async function main(): Promise<void> {
   const server = createServer(app);
   hub.attach(server);
 
+  await db.initialize();
+  console.log(`[fleetgrid] storage ${db.storage}`);
+
   const seed = await ensureSeeded();
   if (seed.seeded) {
     console.log(`[fleetgrid] seeded demo data → ${config.dataDir} (${seed.trucks} trucks, ${seed.shipments} shipments)`);
@@ -116,12 +113,13 @@ async function main(): Promise<void> {
   server.listen(config.port, config.host, () => {
     console.log(`[fleetgrid] API      http://localhost:${config.port}`);
     console.log(`[fleetgrid] realtime ws://localhost:${config.port}/realtime`);
-    console.log(`[fleetgrid] data dir ${config.dataDir}`);
+    if (db.storage === 'json-file') console.log(`[fleetgrid] data dir ${config.dataDir}`);
   });
 
   const shutdown = async (signal: string) => {
     console.log(`\n[fleetgrid] ${signal} received, shutting down.`);
     await hub.close();
+    await db.close();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   };

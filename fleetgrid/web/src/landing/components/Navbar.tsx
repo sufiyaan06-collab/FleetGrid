@@ -44,6 +44,20 @@ export default function Navbar() {
         <div className="hidden items-center gap-3 lg:flex">
           <button
             type="button"
+            onClick={() => void setMode('LOGIN')}
+            className="inline-flex h-9 items-center rounded-md border border-healthy/50 bg-healthy/10 px-3.5 text-[12px] font-semibold text-healthy transition-colors hover:bg-healthy/20 cursor-pointer"
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => void setMode('REGISTER')}
+            className="inline-flex h-9 items-center rounded-md bg-fg px-3.5 text-[12px] font-semibold text-base transition-colors hover:bg-fg/90 cursor-pointer"
+          >
+            Create Account
+          </button>
+          <button
+            type="button"
             onClick={() => void setMode('LIVE_MAP')}
             className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-panel px-3 text-[12px] font-medium text-dim transition-colors hover:border-accent hover:text-accent cursor-pointer"
           >
@@ -103,17 +117,17 @@ export default function Navbar() {
           <div className="mt-4 flex gap-3">
             <button
               type="button"
-              onClick={() => { setOpen(false); void setMode('CONTROL_TOWER'); }}
+              onClick={() => { setOpen(false); void setMode('LOGIN'); }}
               className="flex h-11 flex-1 items-center justify-center rounded-md border border-line text-[13px] text-dim cursor-pointer"
             >
               Sign In
             </button>
             <button
               type="button"
-              onClick={() => { setOpen(false); void setMode('CONTROL_TOWER'); }}
+              onClick={() => { setOpen(false); void setMode('REGISTER'); }}
               className="flex h-11 flex-[1.6] items-center justify-center gap-2 rounded-md bg-fg text-[12px] font-medium uppercase tracking-[0.08em] text-base cursor-pointer"
             >
-              Enter Control Tower
+              Create Account
             </button>
           </div>
         </div>

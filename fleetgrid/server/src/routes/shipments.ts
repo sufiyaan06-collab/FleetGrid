@@ -13,8 +13,31 @@ import {
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
+import { requireRoles } from '../middleware/auth.js';
+import { db } from '../store/db.js';
+import { ApiError } from '../lib/errors.js';
+import type { User } from '../types.js';
 
 export const shipmentsRouter: Router = Router();
+
+async function assertShipmentAccess(user: User, shipmentId: string, allowedRoles?: User['role'][]): Promise<void> {
+  if (process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') return;
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    throw new ApiError(403, 'ROLE_FORBIDDEN', 'Your account cannot perform this shipment action.');
+  }
+  const shipment = await db.shipments.findById(shipmentId);
+  if (!shipment) throw ApiError.notFound(`Shipment ${shipmentId} not found.`);
+  if (user.role === 'CONTROL_TOWER' || user.role === 'OPERATOR' || user.role === 'VERIFIER') return;
+  if (user.role === 'BUSINESS' && shipment.shipperId === user.organizationId) return;
+  if (user.role === 'DRIVER' && shipment.truckId) {
+    const drivers = await db.drivers.find((driver) => driver.userId === user.id);
+    const truckIds = new Set(drivers.map((driver) => driver.assignedTruckId).filter((id): id is string => Boolean(id)));
+    const truck = await db.trucks.findById(shipment.truckId);
+    if (truck && truckIds.has(truck.id)) return;
+  }
+  throw ApiError.notFound(`Shipment ${shipmentId} not found.`);
+}
+
 
 const createShipmentSchema = z.object({
   shipperId: z.string().min(2),
@@ -40,11 +63,12 @@ const createShipmentSchema = z.object({
  */
 shipmentsRouter.post(
   '/shipments',
+  requireRoles('BUSINESS'),
   validateBody(createShipmentSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof createShipmentSchema>;
     const result = await createShipment({
-      shipperId: body.shipperId,
+      shipperId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? body.shipperId : (res.locals.authUser as User).organizationId,
       cargoName: body.cargoName,
       reference: body.reference ?? null,
       origin: body.origin,
@@ -53,7 +77,7 @@ shipmentsRouter.post(
       deadlineAt: body.deadlineAt ?? null,
       capacityOfferId: body.capacityOfferId ?? null,
       actorType: 'BUSINESS',
-      actorId: body.actorId ?? null,
+      actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? body.actorId ?? null : (res.locals.authUser as User).id,
     });
     res.status(201).json({
       ok: true,
@@ -75,7 +99,15 @@ shipmentsRouter.get(
   validateQuery(listQuerySchema),
   asyncHandler(async (_req, res) => {
     const query = res.locals.query as z.infer<typeof listQuerySchema>;
-    const shipments = await listShipments(query);
+    const user = res.locals.authUser as User;
+    const all = await listShipments(query);
+    let shipments = all;
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && user.role === 'BUSINESS') shipments = all.filter((shipment) => shipment.shipperId === user.organizationId);
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && user.role === 'DRIVER') {
+      const drivers = await db.drivers.find((driver) => driver.userId === user.id);
+      const truckIds = new Set(drivers.map((driver) => driver.assignedTruckId).filter((id): id is string => Boolean(id)));
+      shipments = all.filter((shipment) => Boolean(shipment.truckId && truckIds.has(shipment.truckId)));
+    }
     res.json({ shipments, count: shipments.length });
   }),
 );
@@ -83,7 +115,9 @@ shipmentsRouter.get(
 shipmentsRouter.get(
   '/shipments/:id',
   asyncHandler(async (req, res) => {
-    res.json({ shipment: await getShipment(requiredParam(req, 'id')) });
+    const id = requiredParam(req, 'id');
+    await assertShipmentAccess(res.locals.authUser as User, id);
+    res.json({ shipment: await getShipment(id) });
   }),
 );
 
@@ -95,8 +129,11 @@ shipmentsRouter.get(
  */
 shipmentsRouter.post(
   '/shipments/:id/confirm',
+  requireRoles('DRIVER'),
   asyncHandler(async (req, res) => {
-    const shipment = await confirmShipment(requiredParam(req, 'id'), { actorType: 'DRIVER' });
+    const id = requiredParam(req, 'id');
+    await assertShipmentAccess(res.locals.authUser as User, id, ['DRIVER']);
+    const shipment = await confirmShipment(id, { actorType: 'DRIVER', actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? null : (res.locals.authUser as User).id });
     res.json({ ok: true, shipment, acceptedBy: 'DRIVER' });
   }),
 );
@@ -115,13 +152,16 @@ const declineSchema = z.object({
  */
 shipmentsRouter.post(
   '/shipments/:id/decline',
+  requireRoles('DRIVER'),
   validateBody(declineSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof declineSchema>;
-    const result = await declineShipment(requiredParam(req, 'id'), {
+    const id = requiredParam(req, 'id');
+    await assertShipmentAccess(res.locals.authUser as User, id, ['DRIVER']);
+    const result = await declineShipment(id, {
       reason: body.reason ?? null,
       actorType: 'DRIVER',
-      actorId: body.actorId ?? null,
+      actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? body.actorId ?? null : (res.locals.authUser as User).id,
     });
     res.json({
       ok: true,
@@ -137,7 +177,9 @@ shipmentsRouter.post(
 shipmentsRouter.get(
   '/shipments/:id/timeline',
   asyncHandler(async (req, res) => {
-    res.json(await shipmentTimeline(requiredParam(req, 'id')));
+    const id = requiredParam(req, 'id');
+    await assertShipmentAccess(res.locals.authUser as User, id);
+    res.json(await shipmentTimeline(id));
   }),
 );
 
@@ -153,12 +195,14 @@ const confirmDeliverySchema = z.object({
  */
 shipmentsRouter.post(
   '/shipments/:id/confirm-delivery',
+  requireRoles('BUSINESS'),
   validateBody(confirmDeliverySchema),
   asyncHandler(async (req, res) => {
-    const body = req.body as z.infer<typeof confirmDeliverySchema>;
-    const result = await confirmDelivery(requiredParam(req, 'id'), {
+    const id = requiredParam(req, 'id');
+    await assertShipmentAccess(res.locals.authUser as User, id, ['BUSINESS']);
+    const result = await confirmDelivery(id, {
       actorType: 'BUSINESS',
-      actorId: body.actorId ?? null,
+      actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? null : (res.locals.authUser as User).id,
     });
     res.json({
       ok: true,

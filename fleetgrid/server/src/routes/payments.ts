@@ -1,16 +1,93 @@
 import { Router } from 'express';
+import DodoPayments from 'dodopayments';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
-import {
-  createDodoCheckout,
-  confirmDodoPayment,
-  getPayment,
-  listPayments,
-} from '../services/payments.js';
+import { confirmDodoPayment, createDodoCheckout, failDodoPayment, getPayment, listPayments } from '../services/payments.js';
+import { db } from '../store/db.js';
+import { requireAuthenticated, requireRoles } from '../middleware/auth.js';
+import { ApiError } from '../lib/errors.js';
+import type { User } from '../types.js';
 
 export const paymentsRouter: Router = Router();
+
+// Provider callbacks are public only at this route and are authenticated by the
+// Dodo Standard Webhooks signature. All other payment routes require a user session.
+paymentsRouter.post(
+  '/payments/dodo/webhook',
+  asyncHandler(async (req, res) => {
+    const webhookKey = process.env.DODO_PAYMENTS_WEBHOOK_KEY;
+    if (!webhookKey) {
+      res.status(503).json({ error: { code: 'WEBHOOK_NOT_CONFIGURED', message: 'Dodo webhook signature verification is not configured.' } });
+      return;
+    }
+
+    const rawBody = (req as typeof req & { rawBody?: string }).rawBody;
+    if (!rawBody) {
+      res.status(400).json({ error: { code: 'WEBHOOK_RAW_BODY_REQUIRED', message: 'The original signed request body is unavailable.' } });
+      return;
+    }
+
+    // The SDK constructor requires a bearer token even though unwrap performs no API call.
+    const client = new DodoPayments({
+      bearerToken: process.env.DODO_PAYMENTS_API_KEY || 'webhook-verification-only',
+      webhookKey,
+    });
+    let event;
+    try {
+      event = client.webhooks.unwrap(rawBody, {
+        headers: {
+          'webhook-id': req.get('webhook-id') ?? '',
+          'webhook-signature': req.get('webhook-signature') ?? '',
+          'webhook-timestamp': req.get('webhook-timestamp') ?? '',
+        },
+      });
+    } catch {
+      res.status(401).json({ error: { code: 'WEBHOOK_SIGNATURE_INVALID', message: 'Dodo webhook signature is invalid or expired.' } });
+      return;
+    }
+
+    const data = event.data as {
+      checkout_session_id?: string | null;
+      payment_id?: string;
+      payment_method?: string | null;
+      currency?: string;
+    };
+    const sessionId = data.checkout_session_id;
+    if (!sessionId) {
+      res.json({ ok: true, ignored: true, reason: 'No FleetGrid checkout session reference was present.' });
+      return;
+    }
+
+    const matches = await db.payments.find((payment) =>
+      payment.provider === 'Dodo Payments' && payment.providerReference === sessionId,
+    );
+    const payment = matches[0];
+    if (!payment) {
+      // A valid event for another product or an old session is acknowledged but
+      // never allowed to mutate an unrelated FleetGrid payment.
+      res.json({ ok: true, ignored: true });
+      return;
+    }
+
+    if (data.currency && data.currency.toUpperCase() !== payment.currency.toUpperCase()) {
+      console.warn('[DodoPayments] Ignored verified event with currency mismatch for local payment', payment.id);
+      res.json({ ok: true, ignored: true, reason: 'Currency did not match the local checkout.' });
+      return;
+    }
+
+    if (event.type === 'payment.succeeded') {
+      await confirmDodoPayment(payment.id, sessionId, data.payment_method ?? undefined, data.payment_id);
+    } else if (event.type === 'payment.failed' || event.type === 'payment.cancelled') {
+      await failDodoPayment(payment.id, sessionId, event.type);
+    }
+
+    res.status(200).json({ ok: true, received: true });
+  }),
+);
+
+paymentsRouter.use(requireAuthenticated);
 
 const createDodoCheckoutSchema = z.object({
   shipmentId: z.string().min(2).nullish(),
@@ -19,74 +96,70 @@ const createDodoCheckoutSchema = z.object({
   currency: z.string().length(3).optional(),
   customerName: z.string().min(1).optional(),
   customerEmail: z.string().email().optional(),
-  returnUrl: z.string().url().optional(),
 });
 
-/** POST /payments/dodo/checkout — Generates a Dodo Payments checkout session. */
 paymentsRouter.post(
   '/payments/dodo/checkout',
+  requireRoles('BUSINESS'),
   validateBody(createDodoCheckoutSchema),
   asyncHandler(async (req, res) => {
-    const result = await createDodoCheckout(req.body);
+    const body = req.body as z.infer<typeof createDodoCheckoutSchema>;
+    const user = res.locals.authUser as User;
+    if (!body.shipmentId) throw ApiError.badRequest('A shipment must be linked to a shipper payment.');
+    const shipment = await db.shipments.findById(body.shipmentId);
+    if (!shipment || (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && shipment.shipperId !== user.organizationId)) {
+      throw ApiError.notFound('Shipment not found.');
+    }
+    const account = await db.authAccounts.findById(user.id);
+    if (!account?.email) throw new ApiError(400, 'BILLING_EMAIL_REQUIRED', 'Add a verified account email before starting checkout.');
+    const result = await createDodoCheckout({
+      shipmentId: shipment.id,
+      amount: shipment.price,
+      currency: shipment.currency,
+      customerName: user.name,
+      customerEmail: account.email,
+    });
     res.status(201).json(result);
   }),
 );
 
-const confirmDodoPaymentSchema = z.object({
-  paymentId: z.string().min(2),
-  providerReference: z.string().min(2).optional(),
-  paymentMethod: z.string().optional(),
+// A browser redirect or client request is not proof that money was received.
+// Only a signature-verified provider webhook may transition a payment to PAID.
+paymentsRouter.post('/payments/dodo/confirm', (_req, res) => {
+  res.status(409).json({
+    error: {
+      code: 'PROVIDER_CONFIRMATION_REQUIRED',
+      message: 'Payment confirmation is only accepted from a verified Dodo Payments webhook.',
+    },
+  });
 });
 
-/** POST /payments/dodo/confirm — Finalizes payment status and confirms associated shipment. */
-paymentsRouter.post(
-  '/payments/dodo/confirm',
-  validateBody(confirmDodoPaymentSchema),
-  asyncHandler(async (req, res) => {
-    const { paymentId, providerReference, paymentMethod } = req.body;
-    const result = await confirmDodoPayment(paymentId, providerReference, paymentMethod);
-    res.json({
-      status: 'success',
-      payment: result.payment,
-      shipment: result.shipment,
-    });
-  }),
-);
-
-/** GET /payments — Lists all payment records. */
 paymentsRouter.get(
   '/payments',
   asyncHandler(async (_req, res) => {
-    res.json({ payments: await listPayments() });
+    const user = res.locals.authUser as User;
+    const all = await listPayments();
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' || ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)) {
+      res.json({ payments: all });
+      return;
+    }
+    const ownShipments = await db.shipments.find((shipment) => shipment.shipperId === user.organizationId);
+    const ownIds = new Set(ownShipments.map((shipment) => shipment.id));
+    res.json({ payments: all.filter((payment) => Boolean(payment.shipmentId && ownIds.has(payment.shipmentId))) });
   }),
 );
 
-/** GET /payments/:id — Gets a specific payment by ID. */
 paymentsRouter.get(
   '/payments/:id',
   asyncHandler(async (req, res) => {
     const id = requiredParam(req, 'id');
-    res.json({ payment: await getPayment(id) });
-  }),
-);
-
-/** POST /payments/dodo/webhook — Handles Dodo Payments incoming webhooks. */
-paymentsRouter.post(
-  '/payments/dodo/webhook',
-  asyncHandler(async (req, res) => {
-    const payload = req.body;
-    const paymentId = payload?.data?.payment_id || payload?.payment_id || payload?.data?.id;
-
-    if (paymentId) {
-      try {
-        await confirmDodoPayment(paymentId, payload?.id, 'Dodo Webhook');
-        res.json({ received: true, status: 'processed', paymentId });
-        return;
-      } catch (err) {
-        console.warn('[DodoWebhook] Auto-confirm error:', (err as Error).message);
-      }
+    const payment = await getPayment(id);
+    const user = res.locals.authUser as User;
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && !['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)) {
+      const shipment = payment.shipmentId ? await db.shipments.findById(payment.shipmentId) : undefined;
+      if (!shipment || shipment.shipperId !== user.organizationId) throw ApiError.notFound('Payment not found.');
     }
-
-    res.json({ received: true, note: 'Webhook payload received' });
+    res.json({ payment });
   }),
 );
+

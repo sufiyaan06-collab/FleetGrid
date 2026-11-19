@@ -3,9 +3,9 @@
 #
 # HOW TO DEPLOY ON RENDER:
 #   1. Go to https://dashboard.render.com
-#   2. Click "New +" → "Blueprint"
-#   3. Select your repository (fictiondharm/ember) and branch (feature/dodo-payments)
-#   4. Click "Apply" — Render will automatically build and deploy:
+#   2. Review the Blueprint changes and database plan before applying.
+#   3. Confirm the selected repository and branch are the intended release branch.
+#   4. Services have autoDeploy disabled below; deploy manually only after migration and smoke tests.
 #      - fleetgrid-app: The Full-Stack Node Web App (UI + Google Maps + API + WebSockets)
 #      - fleetgrid-backend: Python FastAPI backend (optional)
 #      - fleetgrid-db: PostgreSQL database (optional)
@@ -20,7 +20,7 @@ services:
     buildCommand: npm --prefix fleetgrid/web install && npm --prefix fleetgrid/web run build && npm --prefix fleetgrid/server install && npm --prefix fleetgrid/server run build
     startCommand: cd fleetgrid/server && npm run serve
     healthCheckPath: /api
-    autoDeploy: true
+    autoDeploy: false
 
     envVars:
       - key: NODE_VERSION
@@ -29,8 +29,16 @@ services:
         value: 10000
       - key: HOST
         value: 0.0.0.0
+      - key: AUTO_SEED
+        value: "false"
+      - key: APP_BASE_URL
+        value: https://ember-beryl-phi.vercel.app
       - key: CORS_ORIGIN
-        value: "*"
+        value: "https://ember-beryl-phi.vercel.app,https://fleetgrid-app.onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fleetgrid-db
+          property: connectionString
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 

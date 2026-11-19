@@ -94,7 +94,8 @@ export function RoleSelect() {
               disabled={busy !== null}
               onClick={() => {
                 setBusy(option.id);
-                void setMode(option.id).finally(() => setBusy(null));
+                const destination = import.meta.env.PROD && option.id !== 'LANDING' ? 'LOGIN' : option.id;
+                void setMode(destination).finally(() => setBusy(null));
               }}
               className={cn(
                 'group flex flex-col rounded-lg border border-base-600 bg-base-800/80 p-4 text-left transition-all',
@@ -129,6 +130,8 @@ export function RoleSelect() {
             <span className="h-1.5 w-1.5 rounded-full bg-healthy" />
             Create an account — driver or business
           </button>
+          <span>·</span>
+          <button type="button" onClick={() => void setMode('LOGIN')} className="text-healthy/80 hover:text-healthy">Sign in</button>
           <span>·</span>
           <span className="flex items-center gap-1.5">
             <span

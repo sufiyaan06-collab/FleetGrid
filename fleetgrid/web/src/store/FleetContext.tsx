@@ -70,6 +70,7 @@ interface FleetContextValue {
    */
   adoptAccount: (mode: Mode, session: DemoLoginResponse) => void;
   resetDemo: () => Promise<void>;
+  signOut: () => Promise<void>;
   lastEventLabel: string | null;
 }
 
@@ -138,7 +139,42 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const connection = useRealtime({ onMessage: handleMessage, onOpen: () => void refresh() });
 
   useEffect(() => {
-    void refresh();
+    let active = true;
+    void api.me().then((account) => {
+      if (!active) return;
+      const nextMode = account.user.role === 'BUSINESS'
+        ? 'BUSINESS'
+        : account.user.role === 'DRIVER'
+          ? 'DRIVER'
+          : 'CONTROL_TOWER';
+      const restored: DemoLoginResponse = {
+        ok: true,
+        mode: 'authenticated',
+        user: account.user,
+        organization: account.organization,
+        driver: account.driver,
+        availableRoles: [account.user.role],
+      };
+      setSession(restored);
+      setModeState(nextMode);
+      void refresh();
+      try {
+        window.localStorage.setItem(MODE_STORAGE_KEY, nextMode);
+      } catch {
+        /* private mode: ignore */
+      }
+    }).catch(() => {
+      // No valid credential session: never reopen a stale locally remembered role.
+      if (!active) return;
+      setModeState('LANDING');
+      setSession(null);
+      try {
+        window.localStorage.removeItem(MODE_STORAGE_KEY);
+      } catch {
+        /* private mode: ignore */
+      }
+    });
+    return () => { active = false; };
   }, [refresh]);
 
   useEffect(
@@ -160,14 +196,15 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       }
       try {
         // REGISTER, LIVE_MAP, PAYMENTS, and LANDING are screens, so there is no seeded role to log into for them.
-        if (next === 'REGISTER' || next === 'LIVE_MAP' || next === 'PAYMENTS' || next === 'LANDING') return;
+        if (next === 'REGISTER' || next === 'LIVE_MAP' || next === 'PAYMENTS' || next === 'LANDING' || next === 'LOGIN') return;
         const login = await api.demoLogin(next);
         setSession(login);
+        await refresh();
       } catch (err) {
         setError((err as Error).message);
       }
     },
-    [],
+    [refresh],
   );
 
   const adoptAccount = useCallback((next: Mode, account: DemoLoginResponse) => {
@@ -179,6 +216,22 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     }
     setSession(account);
     setError(null);
+    void refresh();
+  }, [refresh]);
+
+  const signOut = useCallback(async () => {
+    try {
+      await api.logout();
+    } finally {
+      setSession(null);
+      setModeState('LANDING');
+      setSnapshot(EMPTY_SNAPSHOT);
+      try {
+        window.localStorage.removeItem(MODE_STORAGE_KEY);
+      } catch {
+        /* private mode: ignore */
+      }
+    }
   }, []);
 
   const resetDemo = useCallback(async () => {
@@ -213,6 +266,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     setMode,
     adoptAccount,
     resetDemo,
+    signOut,
     lastEventLabel,
   };
 
@@ -226,6 +280,7 @@ export function useFleet(): FleetContextValue {
 }
 
 function readStoredMode(): Mode | null {
+  if (new URLSearchParams(window.location.search).has('token')) return 'LOGIN';
   try {
     const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
     if (
@@ -235,7 +290,8 @@ function readStoredMode(): Mode | null {
       stored === 'PAYMENTS' ||
       stored === 'BUSINESS' ||
       stored === 'DRIVER' ||
-      stored === 'REGISTER'
+      stored === 'REGISTER' ||
+      stored === 'LOGIN'
     ) {
       return stored as Mode;
     }

@@ -9,6 +9,8 @@ type Kind = 'BUSINESS' | 'DRIVER';
 interface FormState {
   name: string;
   contact: string;
+  email: string;
+  password: string;
   organizationName: string;
   registrationNo: string;
   capacityT: string;
@@ -20,6 +22,8 @@ interface FormState {
 const EMPTY: FormState = {
   name: '',
   contact: '',
+  email: '',
+  password: '',
   organizationName: '',
   registrationNo: '',
   capacityT: '5',
@@ -52,17 +56,16 @@ const labelCls = 'mb-1 block text-[10px] font-medium uppercase tracking-[0.12em]
 /**
  * Self-service registration.
  *
- * Deliberately mirrors the server's honest scope: this records an account and lets
- * you act as it, but there is no password or session, so the card says so plainly
- * rather than implying a real signup. The server owns every rule — this form only
- * collects fields and shows the errors the API returns.
+ * Real self-service signup. The server stores a password hash and sends an
+ * email-verification link; users cannot enter the application until verified.
  */
 export function Register() {
-  const { setMode, adoptAccount, connection, error: connectionError } = useFleet();
+  const { setMode, connection, error: connectionError } = useFleet();
   const [kind, setKind] = useState<Kind>('BUSINESS');
   const [form, setForm] = useState<FormState>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -71,11 +74,14 @@ export function Register() {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const capacityT = Number(form.capacityT);
-      const result = await api.register({
+      const result = await api.signup({
         role: kind,
         name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
         contact: form.contact.trim(),
         ...(form.organizationName.trim() ? { organizationName: form.organizationName.trim() } : {}),
         ...(kind === 'DRIVER' && form.withTruck
@@ -89,19 +95,8 @@ export function Register() {
             }
           : {}),
       });
-
-      // setMode flips the view and runs demoLogin for the role; adoptAccount then
-      // replaces that seeded session with the account we just created, so the app
-      // acts as this new user rather than as a seeded demo user.
-      await setMode(kind);
-      adoptAccount(kind, {
-        ok: true,
-        mode: 'registered',
-        user: result.user,
-        organization: result.organization,
-        driver: result.driver,
-        availableRoles: [kind],
-      } as never);
+      setNotice(result.message);
+      setForm(EMPTY);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -117,7 +112,7 @@ export function Register() {
       <div className="mb-5 flex items-center justify-between">
         <button
           type="button"
-          onClick={() => void setMode('CONTROL_TOWER')}
+          onClick={() => void setMode('LANDING')}
           className="text-2xs font-medium uppercase tracking-[0.16em] text-ink-500 transition-colors hover:text-ink-300"
         >
           ← Back to Operations Hub
@@ -176,13 +171,41 @@ export function Register() {
             />
           </div>
           <div>
-            <label className={labelCls} htmlFor="reg-contact">Phone or email</label>
+            <label className={labelCls} htmlFor="reg-email">Email address</label>
+            <input
+              id="reg-email"
+              className={inputCls}
+              value={form.email}
+              onChange={(e) => set('email', e.target.value)}
+              type="email"
+              autoComplete="email"
+              placeholder="you@example.com"
+              required
+            />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="reg-password">Password</label>
+            <input
+              id="reg-password"
+              className={inputCls}
+              value={form.password}
+              onChange={(e) => set('password', e.target.value)}
+              type="password"
+              autoComplete="new-password"
+              minLength={10}
+              placeholder="At least 10 characters"
+              required
+            />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="reg-contact">Phone number</label>
             <input
               id="reg-contact"
               className={inputCls}
               value={form.contact}
               onChange={(e) => set('contact', e.target.value)}
               placeholder="+91 90000 00000"
+              autoComplete="tel"
               required
               minLength={3}
             />
@@ -272,6 +295,12 @@ export function Register() {
           </div>
         )}
 
+        {notice && (
+          <div className="mt-3.5 rounded-md border border-healthy/40 bg-healthy/10 px-3 py-2 text-[11px] leading-relaxed text-healthy">
+            {notice}
+          </div>
+        )}
+
         {shownError && (
           <div className="mt-3.5 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-[11px] leading-relaxed text-danger">
             {shownError}
@@ -286,13 +315,16 @@ export function Register() {
             'hover:bg-healthy/20 disabled:opacity-50',
           )}
         >
-          {busy ? 'Creating account…' : `Continue as ${kind === 'DRIVER' ? 'Driver' : 'Business'}`}
+          {busy ? 'Creating account…' : `Create ${kind === 'DRIVER' ? 'Driver' : 'Business'} account`}
         </button>
 
-        <p className="mt-3 text-[10px] leading-relaxed text-ink-500 font-mono">
-          Authoritative Registration: Provisioned account is tied directly to the FleetGrid network directory and corridor allocation engine.
+        <p className="mt-3 text-[10px] leading-relaxed text-ink-500">
+          You must verify your email before signing in. Passwords are never stored as plain text.
         </p>
       </form>
+      <button type="button" onClick={() => void setMode('LOGIN')} className="mt-4 text-center text-xs text-healthy hover:text-healthy/80">
+        Already have an account? Sign in
+      </button>
     </div>
   );
 }

@@ -1,6 +1,9 @@
+import { Pool } from 'pg';
 import { config } from '../config.js';
 import { createJsonStore, dataFile, type Store } from './jsonStore.js';
+import { createPostgresStore, initializePostgres } from './postgresStore.js';
 import type {
+  AuthAccount,
   CapacityOffer,
   Driver,
   FleetSnapshot,
@@ -23,6 +26,8 @@ import type {
 export interface Db {
   organizations: Store<Organization>;
   users: Store<User>;
+  /** Private credentials and session hashes; deliberately excluded from snapshot(). */
+  authAccounts: Store<AuthAccount>;
   drivers: Store<Driver>;
   trucks: Store<Truck>;
   shipments: Store<Shipment>;
@@ -32,16 +37,41 @@ export interface Db {
   payments: Store<Payment>;
   events: Store<ShipmentEvent>;
   notifications: Store<Notification>;
+  /** Initializes persistent storage before any collection is accessed. */
+  initialize(): Promise<void>;
+  close(): Promise<void>;
+  storage: 'postgresql' | 'json-file';
   snapshot(): Promise<FleetSnapshot>;
 }
 
 function build(dataDir: string): Db {
+  const connectionString = process.env.DATABASE_URL;
+  const pool = connectionString
+    ? new Pool({
+        connectionString,
+        max: 5,
+        ...(process.env.PGSSLMODE === 'require'
+          ? { ssl: { rejectUnauthorized: false } }
+          : {}),
+      })
+    : null;
+
   const store = <T extends { id: string }>(name: string, file: string) =>
-    createJsonStore<T>({ filePath: dataFile(dataDir, file), name });
+    pool
+      ? createPostgresStore<T>(pool, { collection: name })
+      : createJsonStore<T>({ filePath: dataFile(dataDir, file), name });
 
   const db: Db = {
+    storage: pool ? 'postgresql' : 'json-file',
+    async initialize() {
+      if (pool) await initializePostgres(pool);
+    },
+    async close() {
+      if (pool) await pool.end();
+    },
     organizations: store<Organization>('organizations', 'organizations.json'),
     users: store<User>('users', 'users.json'),
+    authAccounts: store<AuthAccount>('auth-accounts', 'auth-accounts.json'),
     drivers: store<Driver>('drivers', 'drivers.json'),
     trucks: store<Truck>('trucks', 'trucks.json'),
     shipments: store<Shipment>('shipments', 'shipments.json'),

@@ -24,13 +24,11 @@ export function PaymentsView() {
   const selectedShipment = shipments.find((s: Shipment) => s.id === selectedShipmentId) || shipments[0] || null;
 
   // Form states
-  const [customerName, setCustomerName] = useState('ABC Distributors Ltd.');
-  const [customerEmail, setCustomerEmail] = useState('billing@abcdistributors.in');
-  const [paymentMethod, setPaymentMethod] = useState<'DODO_CHECKOUT' | 'UPI_QR' | 'CARD'>('DODO_CHECKOUT');
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Payment | null>(null);
-  const [checkoutSession, setCheckoutSession] = useState<{ checkoutUrl: string; paymentId: string; isSandbox: boolean } | null>(null);
-  const [showSimModal, setShowSimModal] = useState(false);
+  const [checkoutNotice, setCheckoutNotice] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'PAID' | 'PENDING'>('ALL');
 
   // Pricing breakdown
@@ -53,48 +51,32 @@ export function PaymentsView() {
     return payments.filter((p: Payment) => p.status === filter);
   }, [payments, filter]);
 
-  // Initiate Dodo Checkout Session
+  // Create a real provider checkout. A browser return never marks a payment as paid.
   const handleInitiatePayment = async () => {
+    if (!customerName.trim() || !customerEmail.trim()) {
+      alert('Enter the shipper company name and billing email first.');
+      return;
+    }
+    if (!selectedShipment) {
+      alert('Select a shipment before starting payment.');
+      return;
+    }
     setIsProcessing(true);
+    setCheckoutNotice('');
     try {
       const res = await api.createDodoCheckout({
-        shipmentId: selectedShipment?.id ?? null,
+        shipmentId: selectedShipment.id,
         amount: totalAmount,
         currency: 'INR',
-        customerName,
-        customerEmail,
+        customerName: customerName.trim(),
+        customerEmail: customerEmail.trim(),
       });
-
-      setCheckoutSession({
-        checkoutUrl: res.checkoutUrl,
-        paymentId: res.payment.id,
-        isSandbox: res.isSandbox,
-      });
-      setShowSimModal(true);
       await refresh();
+      setCheckoutNotice('Payment session created. Complete payment on Dodo’s secure checkout page. FleetGrid will show PAID only after the provider webhook is verified.');
+      // Navigate the current tab so browser popup blockers cannot silently block checkout.
+      window.location.assign(res.checkoutUrl);
     } catch (err) {
-      alert((err as Error).message || 'Failed to initialize Dodo Payments');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // Complete Payment (Webhook / 3DS return simulation)
-  const handleConfirmPayment = async (paymentId: string) => {
-    setIsProcessing(true);
-    try {
-      const res = await api.confirmDodoPayment({
-        paymentId,
-        providerReference: `dodo_ch_${Math.random().toString(36).substring(2, 9)}`,
-        paymentMethod: paymentMethod === 'UPI_QR' ? 'UPI / BharatQR' : paymentMethod === 'CARD' ? 'Visa / Mastercard' : 'Dodo Hosted Checkout',
-      });
-
-      setShowSimModal(false);
-      setCheckoutSession(null);
-      setActiveReceipt(res.payment);
-      await refresh();
-    } catch (err) {
-      alert((err as Error).message || 'Failed to complete payment confirmation');
+      setCheckoutNotice((err as Error).message || 'Dodo Payments is not configured yet.');
     } finally {
       setIsProcessing(false);
     }
@@ -115,7 +97,7 @@ export function PaymentsView() {
               </span>
             </div>
             <p className="mt-0.5 text-xs text-ink-400">
-              Deterministic escrow settlement, instant multi-device webhook verification & cargo confirmation
+              Secure provider checkout; payment status changes only after verified provider confirmation
             </p>
           </div>
 
@@ -132,10 +114,10 @@ export function PaymentsView() {
 
         {/* Top Operational Metrics */}
         <div className="panel grid grid-cols-2 divide-x divide-base-600 sm:grid-cols-4">
-          <Metric label="Total Settled" value={`₹${totalSettled.toLocaleString('en-IN')}`} tone="healthy" hint="Disbursed to carriers" />
-          <Metric label="Paid Invoices" value={paidCount} tone="accent" hint="Authoritative receipts" />
+          <Metric label="Total Paid" value={`₹${totalSettled.toLocaleString('en-IN')}`} tone="healthy" hint="Provider-confirmed payments" />
+          <Metric label="Paid Invoices" value={paidCount} tone="accent" hint="Provider-confirmed receipts" />
           <Metric label="Awaiting Payment" value={pendingCount} tone="warn" hint="Active reservations" />
-          <Metric label="Escrow SLA" value="Instant" tone="neutral" hint="Zero settlement delay" />
+          <Metric label="Escrow SLA" value="Webhook" tone="neutral" hint="Provider confirmation required" />
         </div>
 
         {/* Workspace: Checkout & Payment Terminal */}
@@ -147,7 +129,7 @@ export function PaymentsView() {
               title="Freight Capacity Settlement"
               actions={
                 <span className="font-mono text-2xs text-healthy">
-                  ● Ready for checkout
+                  ● Provider connection required
                 </span>
               }
             >
@@ -239,57 +221,9 @@ export function PaymentsView() {
                   </div>
                 </div>
 
-                {/* Payment Method Selector */}
-                <div>
-                  <label className="block font-mono text-2xs font-semibold uppercase tracking-wider text-ink-400">
-                    Payment Method
-                  </label>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('DODO_CHECKOUT')}
-                      className={cn(
-                        'flex flex-col items-center justify-center rounded-lg border p-3 text-center transition-all',
-                        paymentMethod === 'DODO_CHECKOUT'
-                          ? 'border-accent bg-accent/10 text-accent font-semibold'
-                          : 'border-base-700 bg-base-850 text-ink-400 hover:border-base-600',
-                      )}
-                    >
-                      <span className="text-base">🦤</span>
-                      <span className="mt-1 font-mono text-2xs">Dodo Checkout</span>
-                      <span className="text-[9px] text-ink-500">All-in-One</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('UPI_QR')}
-                      className={cn(
-                        'flex flex-col items-center justify-center rounded-lg border p-3 text-center transition-all',
-                        paymentMethod === 'UPI_QR'
-                          ? 'border-accent bg-accent/10 text-accent font-semibold'
-                          : 'border-base-700 bg-base-850 text-ink-400 hover:border-base-600',
-                      )}
-                    >
-                      <span className="text-base">📱</span>
-                      <span className="mt-1 font-mono text-2xs">UPI / QR Code</span>
-                      <span className="text-[9px] text-ink-500">GPay, PhonePe</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('CARD')}
-                      className={cn(
-                        'flex flex-col items-center justify-center rounded-lg border p-3 text-center transition-all',
-                        paymentMethod === 'CARD'
-                          ? 'border-accent bg-accent/10 text-accent font-semibold'
-                          : 'border-base-700 bg-base-850 text-ink-400 hover:border-base-600',
-                      )}
-                    >
-                      <span className="text-base">💳</span>
-                      <span className="mt-1 font-mono text-2xs">Debit / Credit</span>
-                      <span className="text-[9px] text-ink-500">Visa, Mastercard</span>
-                    </button>
-                  </div>
+                <div className="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-ink-300">
+                  <div className="font-semibold text-ink-100">Payment provider: Dodo Payments</div>
+                  <p className="mt-1 text-ink-400">UPI, cards and other supported methods are presented by Dodo on its secure checkout page. FleetGrid does not collect card or UPI credentials.</p>
                 </div>
 
                 {/* Itemized Cost Breakdown */}
@@ -420,122 +354,13 @@ export function PaymentsView() {
         </div>
       </main>
 
-      {/* Dodo Checkout Simulation / Modal */}
-      {showSimModal && checkoutSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-accent/40 bg-base-900 p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-base-700 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">🦤</span>
-                <div>
-                  <h3 className="font-mono text-sm font-bold text-ink-50">Dodo Payments Checkout</h3>
-                  <p className="text-2xs text-ink-400">Secure Escrow Session</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSimModal(false)}
-                className="text-ink-400 hover:text-ink-100"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-4 font-mono text-xs">
-              <div className="rounded-lg border border-base-700 bg-base-850 p-3.5">
-                <div className="flex justify-between text-ink-400">
-                  <span>Merchant:</span>
-                  <span className="font-semibold text-ink-100">FleetGrid Logistics Inc.</span>
-                </div>
-                <div className="mt-1 flex justify-between text-ink-400">
-                  <span>Customer:</span>
-                  <span className="font-semibold text-ink-100">{customerName}</span>
-                </div>
-                <div className="mt-1 flex justify-between text-ink-400">
-                  <span>Shipment Reference:</span>
-                  <span className="font-semibold text-accent">{selectedShipment?.id}</span>
-                </div>
-                <div className="mt-2 border-t border-base-700 pt-2 flex justify-between text-sm font-bold text-healthy">
-                  <span>Total Due:</span>
-                  <span>₹{totalAmount.toLocaleString('en-IN')}</span>
-                </div>
-              </div>
-
-              {/* Method-specific visual simulation */}
-              {paymentMethod === 'UPI_QR' ? (
-                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-base-600 bg-base-950 p-4">
-                  <div className="h-32 w-32 rounded bg-white p-2 text-center text-base-950 flex flex-col justify-center items-center">
-                    <svg viewBox="0 0 100 100" className="h-28 w-28 text-base-950" fill="currentColor">
-                      <rect x="10" y="10" width="30" height="30" />
-                      <rect x="60" y="10" width="30" height="30" />
-                      <rect x="10" y="60" width="30" height="30" />
-                      <rect x="50" y="50" width="10" height="10" />
-                      <rect x="70" y="70" width="20" height="20" />
-                      <rect x="50" y="70" width="10" height="10" />
-                      <rect x="70" y="50" width="10" height="10" />
-                    </svg>
-                  </div>
-                  <span className="mt-2 text-2xs text-ink-400">Scan with any UPI App (GPay / PhonePe / Paytm)</span>
-                </div>
-              ) : paymentMethod === 'CARD' ? (
-                <div className="space-y-2 rounded-lg border border-base-700 bg-base-950 p-3.5">
-                  <div>
-                    <label className="text-3xs uppercase text-ink-400">Card Number</label>
-                    <input
-                      type="text"
-                      readOnly
-                      value="4242 •••• •••• 4242"
-                      className="mt-0.5 w-full rounded border border-base-700 bg-base-900 px-2 py-1 text-2xs font-mono text-ink-200"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-3xs uppercase text-ink-400">Expiry</label>
-                      <input
-                        type="text"
-                        readOnly
-                        value="12/28"
-                        className="mt-0.5 w-full rounded border border-base-700 bg-base-900 px-2 py-1 text-2xs font-mono text-ink-200"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-3xs uppercase text-ink-400">CVC</label>
-                      <input
-                        type="text"
-                        readOnly
-                        value="888"
-                        className="mt-0.5 w-full rounded border border-base-700 bg-base-900 px-2 py-1 text-2xs font-mono text-ink-200"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-accent/20 bg-accent/5 p-3 text-center">
-                  <span className="text-2xs text-ink-300">
-                    Direct integration link ready:
-                  </span>
-                  <div className="mt-1 truncate font-mono text-3xs text-accent">
-                    {checkoutSession.checkoutUrl}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={() => handleConfirmPayment(checkoutSession.paymentId)}
-                  className="w-full rounded-lg bg-healthy px-4 py-2.5 font-mono text-xs font-bold text-base-950 uppercase shadow-md transition-all hover:bg-healthy/90 active:scale-[0.99] cursor-pointer"
-                >
-                  {isProcessing ? 'Authorizing & Settling…' : `Authorize & Settle ₹${totalAmount.toLocaleString('en-IN')} via Dodo`}
-                </button>
-              </div>
-            </div>
-          </div>
+      {checkoutNotice && (
+        <div className="mx-auto mb-6 max-w-3xl rounded-lg border border-base-600 bg-base-850 p-4 text-sm text-ink-200" role="status">
+          {checkoutNotice}
         </div>
       )}
 
-      {/* Official Receipt Modal */}
+      {/* Checkout status and official receipt */}
       {activeReceipt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-xl border border-healthy/40 bg-base-900 p-6 shadow-2xl">
@@ -592,7 +417,7 @@ export function PaymentsView() {
               </div>
 
               <div className="rounded border border-healthy/30 bg-healthy/5 p-3 text-2xs text-healthy">
-                ✓ Cargo capacity has been authoritatively locked. The linked shipment has transitioned to <strong>CONFIRMED</strong> on all driver and control tower dashboards.
+                This receipt is available only for a payment confirmed by the payment provider.
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

@@ -5,6 +5,8 @@ import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { TOOL_CATALOG } from '../services/agentTools.js';
 import { AGENT_TOOL_CONTRACT } from '../services/agentToolSchema.js';
+import type { User } from '../types.js';
+import { requireRoles } from '../middleware/auth.js';
 
 export const miscRouter: Router = Router();
 
@@ -18,7 +20,55 @@ export const miscRouter: Router = Router();
 miscRouter.get(
   '/state',
   asyncHandler(async (_req, res) => {
-    res.json(await db.snapshot());
+    const user = res.locals.authUser as User;
+    const snapshot = await db.snapshot();
+    if (process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') {
+      res.json(snapshot);
+      return;
+    }
+
+    // Operations roles need the network-wide picture. Shippers and drivers receive
+    // only their organisation's private records plus the public capacity network.
+    if (user.role === 'CONTROL_TOWER' || user.role === 'OPERATOR' || user.role === 'VERIFIER') {
+      res.json(snapshot);
+      return;
+    }
+
+    const ownDrivers = snapshot.drivers.filter((driver) => driver.userId === user.id);
+    const ownTruckIds = new Set(ownDrivers.map((driver) => driver.assignedTruckId).filter((id): id is string => Boolean(id)));
+    const ownTrucks = snapshot.trucks.filter((truck) => ownTruckIds.has(truck.id));
+
+    const ownShipments = user.role === 'BUSINESS'
+      ? snapshot.shipments.filter((shipment) => shipment.shipperId === user.organizationId)
+      : snapshot.shipments.filter((shipment) => Boolean(shipment.truckId && ownTruckIds.has(shipment.truckId)));
+    const ownShipmentIds = new Set(ownShipments.map((shipment) => shipment.id));
+    const ownIncidents = snapshot.incidents.filter((incident) => ownTruckIds.has(incident.truckId));
+    const ownIncidentIds = new Set(ownIncidents.map((incident) => incident.id));
+    const visibleTruckIds = user.role === 'BUSINESS'
+      ? new Set(ownShipments.map((shipment) => shipment.truckId).filter((id): id is string => Boolean(id)))
+      : ownTruckIds;
+
+    res.json({
+      ...snapshot,
+      organizations: snapshot.organizations.filter((organization) => organization.id === user.organizationId),
+      users: user.role === 'DRIVER'
+        ? snapshot.users.filter((member) => member.id === user.id)
+        : snapshot.users.filter((member) => member.organizationId === user.organizationId),
+      drivers: ownDrivers,
+      trucks: user.role === 'BUSINESS' ? snapshot.trucks.map((truck) => ({ ...truck, driverId: null })) : ownTrucks,
+      // Capacity availability is shared across the network; shipment/customer data is not.
+      capacityOffers: user.role === 'BUSINESS'
+        ? snapshot.capacityOffers
+        : snapshot.capacityOffers.filter((offer) => ownTruckIds.has(offer.truckId)),
+      shipments: ownShipments,
+      incidents: ownIncidents,
+      recoveryPlans: snapshot.recoveryPlans.filter((plan) => ownIncidentIds.has(plan.incidentId)),
+      payments: snapshot.payments.filter((payment) => Boolean(payment.shipmentId && ownShipmentIds.has(payment.shipmentId))),
+      events: snapshot.events.filter((event) =>
+        Boolean((event.shipmentId && ownShipmentIds.has(event.shipmentId)) || (event.truckId && visibleTruckIds.has(event.truckId))),
+      ),
+      notifications: snapshot.notifications.filter((notification) => notification.recipientId === user.id),
+    });
   }),
 );
 
@@ -45,6 +95,7 @@ const createOrgSchema = z.object({
 
 miscRouter.post(
   '/organizations',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(createOrgSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as z.infer<typeof createOrgSchema>;
@@ -61,31 +112,21 @@ miscRouter.post(
 
 miscRouter.get(
   '/organizations',
+  requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   asyncHandler(async (_req, res) => {
     res.json({ organizations: await db.organizations.get() });
-  }),
-);
-
-/**
- * GET /payments — placeholder read model.
- * Real payment capture (Dodo) is a later phase; nothing here reports a fake success.
- */
-miscRouter.get(
-  '/payments',
-  asyncHandler(async (_req, res) => {
-    const payments = await db.payments.get();
-    res.json({
-      payments,
-      note: 'Payment provider integration is a later phase. Seeded rows are labelled DEMO_PLACEHOLDER.',
-    });
   }),
 );
 
 miscRouter.get(
   '/notifications',
   asyncHandler(async (_req, res) => {
+    const user = res.locals.authUser as User;
+    const notifications = user.role === 'CONTROL_TOWER' || user.role === 'OPERATOR' || user.role === 'VERIFIER'
+      ? await db.notifications.get()
+      : await db.notifications.find((notification) => notification.recipientId === user.id);
     res.json({
-      notifications: await db.notifications.get(),
+      notifications,
       note: 'Notification delivery is a later phase; rows are stored as PENDING.',
     });
   }),

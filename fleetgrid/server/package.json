@@ -2,7 +2,7 @@
   "name": "fleetgrid-server",
   "version": "0.1.0",
   "private": true,
-  "description": "FleetGrid authoritative backend (Express + TypeScript + JSON file storage)",
+  "description": "FleetGrid authoritative backend (Express + TypeScript + PostgreSQL, with local JSON fallback)",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -11,8 +11,11 @@
     "build": "tsc -p tsconfig.json --noEmit false",
     "serve": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx test/flow.test.ts",
-    "reset": "node ../scripts/reset.mjs"
+    "test": "tsx test/auth-security.test.ts && tsx test/flow.test.ts && tsx test/auth-integration.test.ts",
+    "reset": "node ../scripts/reset.mjs",
+    "provision:ops": "tsx scripts/provision-ops.ts",
+    "migrate:postgres": "tsx scripts/migrate-json-to-postgres.ts",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -20,7 +23,8 @@
     "express": "^4.19.2",
     "fleetgrid-root": "file:../..",
     "ws": "^8.18.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -28,7 +32,8 @@
     "@types/node": "^22.7.4",
     "@types/ws": "^8.5.12",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "@types/pg": "^8.11.10"
   },
   "allowScripts": {
     "esbuild@0.28.2": true

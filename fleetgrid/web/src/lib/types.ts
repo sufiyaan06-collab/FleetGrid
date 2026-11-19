@@ -8,7 +8,7 @@
  */
 export type Role = 'CONTROL_TOWER' | 'BUSINESS' | 'DRIVER' | 'OPERATOR' | 'VERIFIER';
 /** `REGISTER` is a screen, not a role — it hands off to BUSINESS or DRIVER. */
-export type Mode = 'LANDING' | 'CONTROL_TOWER' | 'LIVE_MAP' | 'PAYMENTS' | 'BUSINESS' | 'DRIVER' | 'REGISTER';
+export type Mode = 'LANDING' | 'CONTROL_TOWER' | 'LIVE_MAP' | 'PAYMENTS' | 'BUSINESS' | 'DRIVER' | 'REGISTER' | 'LOGIN';
 
 export type TruckStatus =
   | 'AVAILABLE'
@@ -193,6 +193,7 @@ export interface Payment {
   currency: string;
   status: PaymentStatus;
   providerReference: string | null;
+  providerPaymentId?: string | null;
   checkoutUrl?: string | null;
   customerName?: string | null;
   customerEmail?: string | null;
@@ -295,8 +296,8 @@ export interface RealtimeMessage {
 
 export interface DemoLoginResponse {
   ok: true;
-  mode: 'demo';
-  warning: string;
+  mode: 'demo' | 'authenticated';
+  warning?: string;
   user: User;
   organization: Organization | null;
   driver: Driver | null;
