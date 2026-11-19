@@ -54,7 +54,10 @@ for (const [name, rows] of Object.entries({
     { id: 'truck_a', organizationId: 'fleet_a', registrationNo: 'KA01AA0001', capacityT: 5, availableT: 5, status: 'AVAILABLE', lat: 12.9, lng: 77.6, origin: 'A', destination: 'B', departureAt: null, driverId: 'driver_a', createdAt: now },
     { id: 'truck_other', organizationId: 'fleet_a', registrationNo: 'KA01AA0002', capacityT: 5, availableT: 5, status: 'AVAILABLE', lat: 12.9, lng: 77.6, origin: 'C', destination: 'D', departureAt: null, driverId: 'driver_other_profile', createdAt: now },
   ], 'shipments.json': shipments,
-  'capacity-offers.json': [], 'incidents.json': [], 'recovery-plans.json': [],
+  'capacity-offers.json': [
+    { id: 'offer_a', truckId: 'truck_a', availableT: 5, route: 'A → B', origin: 'A', destination: 'B', pricePerT: 100, departureAt: null, status: 'OPEN', createdAt: now, updatedAt: now },
+    { id: 'offer_other', truckId: 'truck_other', availableT: 5, route: 'C → D', origin: 'C', destination: 'D', pricePerT: 100, departureAt: null, status: 'OPEN', createdAt: now, updatedAt: now },
+  ], 'incidents.json': [], 'recovery-plans.json': [],
   'payments.json': [
     { id: 'payment_a', shipmentId: 'shipment_a', recoveryPlanId: null, provider: 'Dodo Payments', amount: 100, currency: 'INR', status: 'PENDING', providerReference: 'session_a', providerPaymentId: null, checkoutUrl: 'https://checkout.example.test/session_a', customerName: 'Shipper A User', customerEmail: 'a@example.test', paymentMethod: 'DODO_CHECKOUT', createdAt: now, updatedAt: now },
     { id: 'payment_b', shipmentId: 'shipment_b', recoveryPlanId: null, provider: 'Dodo Payments', amount: 100, currency: 'INR', status: 'PENDING', providerReference: 'session_b', providerPaymentId: null, checkoutUrl: 'https://checkout.example.test/session_b', customerName: 'Shipper B User', customerEmail: 'b@example.test', paymentMethod: 'DODO_CHECKOUT', createdAt: now, updatedAt: now },
@@ -185,6 +188,27 @@ try {
   assert.equal(otherDriverTruckDetail.status, 404, 'driver cannot open another drivers truck detail');
   const driverCapacityBrowse = await request('/capacity', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(driverCapacityBrowse.status, 403, 'drivers cannot browse other fleets capacity and driver listings');
+
+  const shipperCapacity = await request('/capacity', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  assert.equal(shipperCapacity.status, 200);
+  const shipperCapacityData = await shipperCapacity.json() as { matches: Array<{ truck: { driverId: string | null }; driverName: string | null }> };
+  assert.ok(shipperCapacityData.matches.length > 0, 'shipper can browse public fleet capacity');
+  assert.ok(shipperCapacityData.matches.every((match) => match.truck.driverId === null && match.driverName === null), 'capacity search hides driver identifiers and names from shippers');
+
+  const shipperCapacityOptions = await request('/capacity/options?weightT=1', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const capacityOptionsData = await shipperCapacityOptions.json() as { single: Array<{ truck: { driverId: string | null }; driverName: string | null }> };
+  assert.ok(capacityOptionsData.single.every((match) => match.truck.driverId === null && match.driverName === null), 'capacity options hide driver identity');
+
+  const shipperNearby = await request('/capacity/nearby?truckId=truck_a&weightT=1', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const nearbyData = await shipperNearby.json() as { selected: { truck: { driverId: string | null }; driverName: string | null } | null; suggestions: Array<{ truck: { driverId: string | null }; driverName: string | null }>; selectedTruck: { driverId: string | null } | null };
+  assert.equal(nearbyData.selected?.truck.driverId, null, 'nearby selected truck hides driver identifier');
+  assert.equal(nearbyData.selected?.driverName, null, 'nearby selected truck hides driver name');
+  assert.ok(nearbyData.suggestions.every((match) => match.truck.driverId === null && match.driverName === null), 'nearby suggestions hide driver identity');
+  assert.equal(nearbyData.selectedTruck?.driverId, null, 'nearby selected truck summary hides driver identifier');
+
+  const shipperCapacityDetail = await request('/capacity/offer_other', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const capacityDetailData = await shipperCapacityDetail.json() as { truck: { driverId: string | null } };
+  assert.equal(capacityDetailData.truck.driverId, null, 'capacity detail hides driver identifier');
 
   const shipperOtherTruckDetail = await request('/trucks/truck_other', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
   const shipperOtherTruck = await shipperOtherTruckDetail.json() as { truck: { driverId: string | null }; driver: unknown };
