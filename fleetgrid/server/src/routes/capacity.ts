@@ -13,7 +13,8 @@ import type { User } from '../types.js';
 export const capacityRouter: Router = Router();
 
 /** Shippers can browse public capacity, but driver identity remains private. */
-function hideDriverDetails<T extends { truck: { driverId: string | null }; driverName: string | null }>(match: T): T {
+function protectCapacityMatch<T extends { truck: { driverId: string | null }; driverName: string | null }>(match: T, user: User): T {
+  if (user.role !== 'BUSINESS') return match;
   return { ...match, truck: { ...match.truck, driverId: null }, driverName: null };
 }
 
@@ -35,13 +36,14 @@ capacityRouter.get(
   requireRoles('BUSINESS', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   validateQuery(capacityQuerySchema),
   asyncHandler(async (_req, res) => {
+    const user = res.locals.authUser as User;
     const query = res.locals.query as z.infer<typeof capacityQuerySchema>;
     const matches = query.includeAll
       ? await searchCapacity(query)
       : await findAvailableCapacity(query);
 
     res.json({
-      matches: matches.map(hideDriverDetails),
+      matches: matches.map((match) => protectCapacityMatch(match, user)),
       count: matches.length,
       criteria: {
         origin: query.origin ?? null,
@@ -97,13 +99,14 @@ capacityRouter.get(
   requireRoles('BUSINESS', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   validateQuery(optionsQuerySchema),
   asyncHandler(async (_req, res) => {
+    const user = res.locals.authUser as User;
     const query = res.locals.query as z.infer<typeof optionsQuerySchema>;
     const result = await capacityOptions(query);
     res.json({
       ...result,
-      single: result.single.map(hideDriverDetails),
-      partial: result.partial.map(hideDriverDetails),
-      split: result.split ? { ...result.split, legs: result.split.legs.map((leg) => ({ ...leg, truck: { ...leg.truck, driverId: null } })) } : null,
+      single: result.single.map((match) => protectCapacityMatch(match, user)),
+      partial: result.partial.map((match) => protectCapacityMatch(match, user)),
+      split: result.split ? { ...result.split, legs: result.split.legs.map((leg) => ({ ...leg, truck: { ...leg.truck, driverId: user.role === 'BUSINESS' ? null : leg.truck.driverId } })) } : null,
       note:
         'A split is a plan, not a booking. Each leg is reserved and driver-approved separately, exactly like a single-truck load.',
     });
@@ -129,13 +132,14 @@ capacityRouter.get(
   requireRoles('BUSINESS', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   validateQuery(nearbyQuerySchema),
   asyncHandler(async (_req, res) => {
+    const user = res.locals.authUser as User;
     const query = res.locals.query as z.infer<typeof nearbyQuerySchema>;
     const result = await suggestNearbyCapacity(query);
     res.json({
       ...result,
-      selected: result.selected ? hideDriverDetails(result.selected) : null,
-      suggestions: result.suggestions.map(hideDriverDetails),
-      selectedTruck: result.selectedTruck ? { ...result.selectedTruck, driverId: null } : null,
+      selected: result.selected ? protectCapacityMatch(result.selected, user) : null,
+      suggestions: result.suggestions.map((match) => protectCapacityMatch(match, user)),
+      selectedTruck: result.selectedTruck ? { ...result.selectedTruck, driverId: user.role === 'BUSINESS' ? null : result.selectedTruck.driverId } : null,
       count: result.suggestions.length,
       selectedTruckSpareT: result.selectedTruck ? round(result.selectedTruck.availableT) : null,
       note: 'Distance is straight-line from stored coordinates, not a routing provider result.',
@@ -147,12 +151,13 @@ capacityRouter.get(
   '/capacity/:id',
   requireRoles('BUSINESS', 'CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   asyncHandler(async (req, res) => {
+    const user = res.locals.authUser as User;
     const offer = await db.capacityOffers.findById(requiredParam(req, 'id'));
     if (!offer) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: `Capacity offer ${requiredParam(req, 'id')} does not exist.` } });
       return;
     }
     const truck = await db.trucks.findById(offer.truckId);
-    res.json({ offer, truck: truck ? { ...truck, driverId: null } : null });
+    res.json({ offer, truck: truck ? { ...truck, driverId: user.role === 'BUSINESS' ? null : truck.driverId } : null });
   }),
 );
