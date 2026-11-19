@@ -41,7 +41,7 @@ capacityRouter.get(
       : await findAvailableCapacity(query);
 
     res.json({
-      matches,
+      matches: matches.map(hideDriverDetails),
       count: matches.length,
       criteria: {
         origin: query.origin ?? null,
@@ -101,6 +101,9 @@ capacityRouter.get(
     const result = await capacityOptions(query);
     res.json({
       ...result,
+      single: result.single.map(hideDriverDetails),
+      partial: result.partial.map(hideDriverDetails),
+      split: result.split ? { ...result.split, legs: result.split.legs.map((leg) => ({ ...leg, truck: { ...leg.truck, driverId: null } })) } : null,
       note:
         'A split is a plan, not a booking. Each leg is reserved and driver-approved separately, exactly like a single-truck load.',
     });
@@ -130,6 +133,9 @@ capacityRouter.get(
     const result = await suggestNearbyCapacity(query);
     res.json({
       ...result,
+      selected: result.selected ? hideDriverDetails(result.selected) : null,
+      suggestions: result.suggestions.map(hideDriverDetails),
+      selectedTruck: result.selectedTruck ? { ...result.selectedTruck, driverId: null } : null,
       count: result.suggestions.length,
       selectedTruckSpareT: result.selectedTruck ? round(result.selectedTruck.availableT) : null,
       note: 'Distance is straight-line from stored coordinates, not a routing provider result.',
