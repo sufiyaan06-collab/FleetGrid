@@ -210,6 +210,15 @@ try {
   const capacityDetailData = await shipperCapacityDetail.json() as { truck: { driverId: string | null } };
   assert.equal(capacityDetailData.truck.driverId, null, 'capacity detail hides driver identifier');
 
+  const shipperReservation = await request('/capacity/offer_other/reserve', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_b' }),
+  });
+  assert.equal(shipperReservation.status, 200, 'shipper can reserve an available public capacity offer for its own shipment');
+  const reservationData = await shipperReservation.json() as { truck: { driverId: string | null } };
+  assert.equal(reservationData.truck.driverId, null, 'capacity reservation response hides driver identifier from shipper');
+
   const shipperOtherTruckDetail = await request('/trucks/truck_other', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
   const shipperOtherTruck = await shipperOtherTruckDetail.json() as { truck: { driverId: string | null }; driver: unknown };
   assert.equal(shipperOtherTruck.truck.driverId, null, 'shipper cannot read another fleets private driver link');
