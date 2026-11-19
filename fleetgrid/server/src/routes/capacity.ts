@@ -12,6 +12,12 @@ import type { User } from '../types.js';
 
 export const capacityRouter: Router = Router();
 
+/** Shippers can browse public capacity, but driver identity remains private. */
+function hideDriverDetails<T extends { truck: { driverId: string | null }; driverName: string | null }>(match: T): T {
+  return { ...match, truck: { ...match.truck, driverId: null }, driverName: null };
+}
+
+
 const capacityQuerySchema = z.object({
   origin: z.string().min(2).optional(),
   destination: z.string().min(2).optional(),
@@ -141,6 +147,6 @@ capacityRouter.get(
       return;
     }
     const truck = await db.trucks.findById(offer.truckId);
-    res.json({ offer, truck: truck ?? null });
+    res.json({ offer, truck: truck ? { ...truck, driverId: null } : null });
   }),
 );
