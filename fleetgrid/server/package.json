@@ -15,7 +15,8 @@
     "reset": "node ../scripts/reset.mjs",
     "provision:ops": "tsx scripts/provision-ops.ts",
     "migrate:postgres": "tsx scripts/migrate-json-to-postgres.ts",
-    "typecheck:scripts": "tsc -p tsconfig.scripts.json"
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
+    "inspect:legacy": "tsx scripts/inspect-legacy-postgres.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
