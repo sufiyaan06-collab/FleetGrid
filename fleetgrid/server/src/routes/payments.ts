@@ -9,6 +9,8 @@ import { db } from '../store/db.js';
 import { requireAuthenticated, requireRoles } from '../middleware/auth.js';
 import { requireTrustedOrigin } from '../middleware/trustedOrigin.js';
 import { ApiError } from '../lib/errors.js';
+import { isProductionEnvironment } from '../config.js';
+import { toDodoMinorUnits } from '../services/payments.js';
 import type { User } from '../types.js';
 
 export const paymentsRouter: Router = Router();
@@ -54,10 +56,14 @@ paymentsRouter.post(
       payment_id?: string;
       payment_method?: string | null;
       currency?: string;
+      status?: string | null;
+      total_amount?: number;
+      tax?: number | null;
+      metadata?: Record<string, string>;
     };
     const sessionId = data.checkout_session_id;
     if (!sessionId) {
-      res.json({ ok: true, ignored: true, reason: 'No FleetGrid checkout session reference was present.' });
+      res.json({ ok: true, ignored: true, reason: 'No checkout session reference was present.' });
       return;
     }
 
@@ -66,21 +72,49 @@ paymentsRouter.post(
     );
     const payment = matches[0];
     if (!payment) {
-      // A valid event for another product or an old session is acknowledged but
-      // never allowed to mutate an unrelated FleetGrid payment.
+      // Dodo can deliver the event before the local checkout row finishes saving.
+      // A FleetGrid metadata marker makes this a retryable out-of-order event.
+      if (data.metadata?.fleetgrid_payment_id) {
+        res.status(503).json({ error: { code: 'PAYMENT_RECORD_NOT_READY', message: 'FleetGrid is still preparing this payment record. Please retry the webhook.' } });
+        return;
+      }
+      // A webhook configured for this endpoint may also receive unrelated Dodo events.
       res.json({ ok: true, ignored: true });
       return;
     }
 
-    if (data.currency && data.currency.toUpperCase() !== payment.currency.toUpperCase()) {
+    if (data.metadata?.fleetgrid_payment_id && data.metadata.fleetgrid_payment_id !== payment.id) {
+      console.warn('[DodoPayments] Ignored verified event with mismatched FleetGrid payment metadata', payment.id);
+      res.json({ ok: true, ignored: true, reason: 'Payment metadata did not match the local record.' });
+      return;
+    }
+
+    if (!data.currency || data.currency.toUpperCase() !== payment.currency.toUpperCase()) {
       console.warn('[DodoPayments] Ignored verified event with currency mismatch for local payment', payment.id);
       res.json({ ok: true, ignored: true, reason: 'Currency did not match the local checkout.' });
       return;
     }
 
     if (event.type === 'payment.succeeded') {
+      if (data.status !== 'succeeded' || !Number.isSafeInteger(data.total_amount)) {
+        console.warn('[DodoPayments] Ignored success event without a settled status and integer total', payment.id);
+        res.json({ ok: true, ignored: true, reason: 'Payment was not reported as settled.' });
+        return;
+      }
+      const expectedMinor = toDodoMinorUnits(payment.amount, payment.currency);
+      const paidBeforeTax = data.total_amount! - (data.tax ?? 0);
+      if (paidBeforeTax !== expectedMinor) {
+        console.warn('[DodoPayments] Ignored verified event with amount mismatch', payment.id, {
+          expectedMinor,
+          providerTotalMinor: data.total_amount,
+          providerTaxMinor: data.tax ?? 0,
+        });
+        res.json({ ok: true, ignored: true, reason: 'Provider amount did not match the agreed shipment amount.' });
+        return;
+      }
       await confirmDodoPayment(payment.id, sessionId, data.payment_method ?? undefined, data.payment_id);
-    } else if (event.type === 'payment.failed' || event.type === 'payment.cancelled') {
+    } else if ((event.type === 'payment.failed' && data.status === 'failed') ||
+               (event.type === 'payment.cancelled' && data.status === 'cancelled')) {
       await failDodoPayment(payment.id, sessionId, event.type);
     }
 
@@ -149,7 +183,7 @@ paymentsRouter.get(
   asyncHandler(async (_req, res) => {
     const user = res.locals.authUser as User;
     const all = await listPayments();
-    if (process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' || ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)) {
+    if ((!isProductionEnvironment() && process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') || ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)) {
       res.json({ payments: all });
       return;
     }
@@ -165,7 +199,7 @@ paymentsRouter.get(
     const id = requiredParam(req, 'id');
     const payment = await getPayment(id);
     const user = res.locals.authUser as User;
-    if (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && !['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)) {
+    if ((isProductionEnvironment() || process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') && !['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(user.role)) {
       const shipment = payment.shipmentId ? await db.shipments.findById(payment.shipmentId) : undefined;
       if (!shipment || shipment.shipperId !== user.organizationId) throw ApiError.notFound('Payment not found.');
     }
