@@ -88,6 +88,12 @@ paymentsRouter.post(
       return;
     }
 
+    if (data.metadata?.fleetgrid_shipment_id && data.metadata.fleetgrid_shipment_id !== (payment.shipmentId ?? '')) {
+      console.warn('[DodoPayments] Ignored verified event with mismatched shipment metadata', payment.id);
+      res.json({ ok: true, ignored: true, reason: 'Shipment metadata did not match the local record.' });
+      return;
+    }
+
     if (!data.currency || data.currency.toUpperCase() !== payment.currency.toUpperCase()) {
       console.warn('[DodoPayments] Ignored verified event with currency mismatch for local payment', payment.id);
       res.json({ ok: true, ignored: true, reason: 'Currency did not match the local checkout.' });
