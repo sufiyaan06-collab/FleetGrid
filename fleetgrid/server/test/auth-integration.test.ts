@@ -257,6 +257,35 @@ try {
   });
   assert.equal(driverPaymentIntent.status, 403, 'drivers cannot create payment intents');
 
+  const dodoStatus = await request('/payments/dodo/status', {
+    headers: { cookie: `fleetgrid_session=${tokenB.token}` },
+  });
+  assert.equal(dodoStatus.status, 200, 'authenticated shipper can inspect Dodo readiness');
+  const dodoStatusBody = await dodoStatus.json() as { ready: boolean; configured: Record<string, boolean> };
+  assert.equal(dodoStatusBody.ready, false, 'Dodo remains disabled without the merchant configuration');
+  assert.equal('apiKey' in dodoStatusBody, false, 'provider readiness never exposes API credentials');
+
+  const draftShipmentCheckout = await request('/payments/dodo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR' }),
+  });
+  assert.equal(draftShipmentCheckout.status, 409, 'checkout is blocked until the driver confirms the shipment');
+
+  const browserPaymentConfirm = await request('/payments/dodo/confirm', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ paymentId: 'forged', providerReference: 'forged' }),
+  });
+  assert.equal(browserPaymentConfirm.status, 409, 'browser requests cannot mark a payment as settled');
+
+  const invalidDodoWebhook = await request('/payments/dodo/webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'payment.succeeded', data: {} }),
+  });
+  assert.equal(invalidDodoWebhook.status, 401, 'unsigned Dodo webhook requests are rejected');
+
   const unpricedShipmentCheckout = await request('/payments/dodo/checkout', {
     method: 'POST',
     headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
