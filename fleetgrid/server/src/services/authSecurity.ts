@@ -46,7 +46,7 @@ export const issueVerificationToken = (): IssuedToken => issueToken(VERIFY_TTL_M
 export function setSessionCookie(res: { setHeader(name: string, value: string): void }, token: string): void {
   const production = process.env.NODE_ENV === 'production';
   const secure = production ? '; Secure' : '';
-  const sameSite = production ? 'None' : 'Lax';
+  const sameSite = 'Lax';
   res.setHeader(
     'Set-Cookie',
     `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${secure}`,
