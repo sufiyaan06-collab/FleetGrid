@@ -85,7 +85,11 @@ export async function sendPasswordResetEmail(email: string, token: string): Prom
       from,
       to: [email],
       subject: 'Reset your FleetGrid password',
-      text: `Reset your FleetGrid password by opening this link: ${url.toString()}\\n\\nThis link expires in 1 hour. If you did not request this, ignore this email.`,
+      text: [
+        `Reset your FleetGrid password by opening this link: ${url.toString()}`,
+        '',
+        'This link expires in 1 hour. If you did not request this, ignore this email.',
+      ].join(String.fromCharCode(10)),
     }),
   });
   if (!response.ok) {
