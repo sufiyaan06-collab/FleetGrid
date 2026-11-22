@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import cors from 'cors';
 import express from 'express';
 import { config, serverRoot } from './config.js';
@@ -127,7 +128,14 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
-main().catch((err) => {
-  console.error('[fleetgrid] failed to start:', err);
-  process.exit(1);
-});
+// Exporting createApp for integration tests must not also start a second listener.
+const invokedDirectly = process.argv[1]
+  ? pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+  : false;
+
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error('[fleetgrid] failed to start:', err);
+    process.exit(1);
+  });
+}
