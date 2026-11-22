@@ -89,6 +89,8 @@ export const api = {
   }) => post<{ ok: true; verificationRequired: true; message: string; email: string }>('/auth/signup', input),
   verifyEmail: (token: string) => post<{ ok: true; message: string }>('/auth/verify-email', { token }),
   resendVerification: (email: string) => post<{ ok: true; message: string }>('/auth/resend-verification', { email }),
+  forgotPassword: (email: string) => post<{ ok: true; message: string }>('/auth/forgot-password', { email }),
+  resetPassword: (token: string, password: string) => post<{ ok: true; message: string }>('/auth/reset-password', { token, password }),
 
   /**
    * Self-service onboarding. Returns the same `{ user, organization, driver }` shape
