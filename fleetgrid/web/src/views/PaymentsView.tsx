@@ -8,7 +8,7 @@ import { cn, formatTime } from '../lib/format';
 import type { Payment, Shipment } from '../lib/types';
 
 export function PaymentsView() {
-  const { snapshot, refresh } = useFleet();
+  const { snapshot, refresh, session } = useFleet();
   const { shipments, payments = [] } = snapshot;
 
   // Selected shipment for payment
@@ -213,11 +213,11 @@ export function PaymentsView() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    disabled={isProcessing || !selectedShipment || !hasValidAmount}
+                    disabled={isProcessing || !selectedShipment || !hasValidAmount || session?.user.role !== 'BUSINESS'}
                     onClick={handleInitiatePayment}
                     className="flex-1 rounded-lg bg-healthy px-4 py-3 font-mono text-xs font-bold tracking-wider text-base-950 uppercase shadow-md transition-all hover:bg-healthy/90 active:scale-[0.99] disabled:opacity-50"
                   >
-                    {isProcessing ? 'Connecting to Dodo Payments…' : hasValidAmount ? `Pay ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)} via Dodo` : 'Shipment price required'}
+                    {isProcessing ? 'Connecting to Dodo Payments…' : session?.user.role !== 'BUSINESS' ? 'Shipper account required to pay' : hasValidAmount ? `Pay ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)} via Dodo` : 'Shipment price required'}
                   </button>
                 </div>
               </div>
