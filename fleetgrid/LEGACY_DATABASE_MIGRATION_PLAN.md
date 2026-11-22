@@ -59,3 +59,15 @@ The importer should use a read-only legacy connection and a separate target conn
 - [ ] Staging import and rollback rehearsal pass.
 - [ ] Payment records reconciled against provider records before enabling payment actions.
 - [ ] Production migration window and explicit owner approval recorded.
+
+## Safe legacy schema inventory
+
+A read-only inspection utility is available at `fleetgrid/server/scripts/inspect-legacy-postgres.ts`. It reports the allowlisted legacy tables' presence, row counts, columns, foreign keys, and distinct values for selected status/role/type columns. It does not read business row contents, write to the source, or connect to a target database.
+
+Before running it, create or obtain a dedicated PostgreSQL role with SELECT-only access to the required legacy schema. Do not use an application owner or superuser credential. Set `LEGACY_DATABASE_URL` in a trusted local shell or secret environment; never commit it or paste it into chat. For an external TLS connection, set `PGSSLMODE=require`; the inspector verifies the server certificate. Then run:
+
+```bash
+npm --prefix fleetgrid/server run inspect:legacy
+```
+
+Review the JSON report for missing tables, row counts, columns, foreign keys, and unexpected enum values. Treat it as schema inventory only—not approval to import. The script checks a fixed list of expected tables in the `public` schema; additional legacy tables may still exist and must be identified before importer design. Do not run it with production write credentials, and do not proceed to a production import based solely on this report.
