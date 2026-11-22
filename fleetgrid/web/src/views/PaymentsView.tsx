@@ -148,7 +148,7 @@ export function PaymentsView() {
               eyebrow="Payment Terminal"
               title="Freight Capacity Settlement"
               actions={
-                <span className="font-mono text-2xs text-healthy">
+                <span className={cn('font-mono text-2xs', providerStatus?.ready ? 'text-healthy' : 'text-warn')}>
                   ● {providerStatus?.ready ? `Dodo ${providerStatus.environment.replace('_mode', '')} configured` : 'Dodo setup incomplete'}
                 </span>
               }
@@ -308,7 +308,7 @@ export function PaymentsView() {
                             </span>
                           </div>
                           <div className="mt-1 font-mono text-2xs text-ink-400">
-                            ID: {p.id} · {p.shipmentId ? `Shipment ${p.shipmentId}` : 'Direct Escrow'}
+                            ID: {p.id} · {p.shipmentId ? `Shipment ${p.shipmentId}` : 'Unlinked payment'}
                           </div>
                           {p.customerName && (
                             <div className="text-2xs text-ink-400">
