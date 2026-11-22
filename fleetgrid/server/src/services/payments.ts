@@ -91,7 +91,14 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
     }
 
     if (!productId) {
-      throw ApiError.notImplemented('Dodo Payments product is not configured. Set DODO_PRODUCT_ID to a real product in the selected Dodo account.');
+      throw ApiError.notImplemented('Dodo Payments product is not configured. Set DODO_PRODUCT_ID to a real pay-what-you-want product in the selected Dodo account.');
+    }
+    const productCurrency = process.env.DODO_PRODUCT_CURRENCY?.trim().toUpperCase();
+    if (!productCurrency || !/^[A-Z]{3}$/.test(productCurrency)) {
+      throw ApiError.notImplemented('Set DODO_PRODUCT_CURRENCY to the currency configured on the Dodo pay-what-you-want product.');
+    }
+    if (productCurrency !== currency.toUpperCase()) {
+      throw ApiError.badRequest('The shipment currency does not match the configured Dodo product currency.');
     }
     if (!webhookKey) {
       throw ApiError.notImplemented('Dodo checkout is disabled until DODO_PAYMENTS_WEBHOOK_KEY is configured for signed payment confirmation.');
