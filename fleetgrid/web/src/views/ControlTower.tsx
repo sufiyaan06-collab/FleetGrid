@@ -29,8 +29,8 @@ export function ControlTower() {
   const { trucks, shipments, incidents, events, users } = snapshot;
   const operatorId = useMemo(() => {
     const operator = users.find((u) => u.role === 'OPERATOR') ?? users.find((u) => u.role === 'CONTROL_TOWER');
-    return operator?.id ?? 'operator_demo';
-  }, [users]);
+    return session?.user.id ?? operator?.id ?? '';
+  }, [users, session?.user.id]);
 
   const counts = useMemo(
     () => ({
