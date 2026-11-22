@@ -228,6 +228,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
 export function mapLegacySnapshot(input: LegacyTables): MigrationReport {
   const all: LegacyTables = Object.fromEntries(TABLES.map(t=>[t,input[t]??[]]));
   const records: MigrationRecord[]=[];
+  const sourceCounts=Object.fromEntries(TABLES.map(table=>[table,all[table].length])) as Record<TableName,number>;
   for(const table of TABLES) {
     const ids=new Set<string>();
     const duplicateIds=new Set<string>();
@@ -257,7 +258,7 @@ export function mapLegacySnapshot(input: LegacyTables): MigrationReport {
   const summary: MigrationReport['summary']={};
   for(const table of TABLES) {
     const tableRecords=records.filter(r=>r.sourceTable===table);
-    summary[table]={source:all[table].length,mapped:tableRecords.filter(r=>r.outcome==='mapped').length,quarantined:tableRecords.filter(r=>r.outcome==='quarantined').length};
+    summary[table]={source:sourceCounts[table],mapped:tableRecords.filter(r=>r.outcome==='mapped').length,quarantined:tableRecords.filter(r=>r.outcome==='quarantined').length};
   }
   const issues=records.flatMap(r=>r.issues.map(i=>({table:r.sourceTable,id:r.sourceId,code:i.code,...(i.field?{field:i.field}:{}),severity:i.severity})));
   return {readOnly:true,summary,records,issues};
