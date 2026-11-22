@@ -210,7 +210,7 @@ export function Driver() {
         type: 'TRUCK_BREAKDOWN',
         location: loc,
         severity: 'CRITICAL',
-        description: `🚨 CRITICAL EMERGENCY SOS: Driver ${activeDriver?.name ?? 'Driver'} triggered panic beacon. ${reasonText}. Vehicle immobilized on highway. AI Corridor Reroute & Emergency Recovery requested immediately.`,
+        description: `🚨 CRITICAL EMERGENCY SOS: Driver ${activeDriver?.name ?? 'Driver'} triggered panic beacon. ${reasonText}. Vehicle immobilized on highway. Control Tower response requested.`,
         ...(driverId ? { actorId: driverId } : {}),
       });
       setSosModalOpen(false);
@@ -242,34 +242,38 @@ export function Driver() {
               <span>🚚</span>
               <span>Cab Cockpit</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('ROSTER')}
-              className={cn(
-                'flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer',
-                activeTab === 'ROSTER' ? 'bg-healthy text-base-950 shadow-sm' : 'text-ink-400 hover:text-ink-100',
-              )}
-            >
-              <span>👥</span>
-              <span>Fleet Drivers ({snapshot.drivers.length})</span>
-            </button>
+            {session?.user.role !== 'DRIVER' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('ROSTER')}
+                className={cn(
+                  'flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer',
+                  activeTab === 'ROSTER' ? 'bg-healthy text-base-950 shadow-sm' : 'text-ink-400 hover:text-ink-100',
+                )}
+              >
+                <span>👥</span>
+                <span>Fleet Drivers ({snapshot.drivers.length})</span>
+              </button>
+            )}
           </div>
 
-          {/* Quick Driver Switcher */}
-          <div className="flex items-center gap-2">
-            <span className="text-2xs font-semibold uppercase tracking-wider text-ink-400">Active Driver:</span>
-            <select
-              value={selectedDriverId}
-              onChange={(e) => setSelectedDriverId(e.target.value)}
-              className="rounded-md border border-base-600 bg-base-800 px-3 py-1.5 font-mono text-xs font-medium text-ink-100 focus:border-healthy focus:outline-none cursor-pointer"
-            >
-              {snapshot.drivers.map((drv) => (
-                <option key={drv.id} value={drv.id} className="bg-base-900 text-ink-100">
-                  {drv.name} ({drv.assignedTruckId ?? 'No Truck'})
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Operations can inspect the roster; a driver only sees their own cab. */}
+          {session?.user.role !== 'DRIVER' && (
+            <div className="flex items-center gap-2">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-ink-400">Active Driver:</span>
+              <select
+                value={selectedDriverId}
+                onChange={(e) => setSelectedDriverId(e.target.value)}
+                className="rounded-md border border-base-600 bg-base-800 px-3 py-1.5 font-mono text-xs font-medium text-ink-100 focus:border-healthy focus:outline-none cursor-pointer"
+              >
+                {snapshot.drivers.map((drv) => (
+                  <option key={drv.id} value={drv.id} className="bg-base-900 text-ink-100">
+                    {drv.name} ({drv.assignedTruckId ?? 'No Truck'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* ======================================================== */}
@@ -755,7 +759,7 @@ export function Driver() {
 
             <div className="p-5">
               <p className="text-xs text-ink-300 leading-relaxed">
-                This broadcast alerts the Control Tower, logs an authoritative breakdown incident, and immediately engages the <strong>AI Corridor Reroute Engine</strong>.
+                This broadcast alerts the Control Tower, logs an authoritative breakdown incident, and sends the incident to the Control Tower for review and response coordination.
               </p>
 
               <div className="mt-4 space-y-2">
