@@ -32,7 +32,9 @@ assert.equal(report.summary.shipments.mapped,1);
 assert.equal(report.summary.shipment_events.mapped,1);
 assert.equal(report.summary.incidents.mapped,1);
 assert.equal(report.summary.recovery_plans.mapped,1);
-assert.equal(report.summary.payments.mapped,1);
+assert.equal(report.summary.payments.mapped,0);
+assert.equal(report.summary.payments.quarantined,1);
+assert.equal(report.records.find(r=>r.sourceTable==='payments')?.outcome,'quarantined');
 assert.equal(report.summary.notifications.mapped,1);
 
 const user = report.records.find(r=>r.sourceTable==='users')?.data;
@@ -71,6 +73,17 @@ assert.equal(incident?.affectedShipmentIds,null);
 
 const notification=report.records.find(r=>r.sourceTable==='notifications')?.data;
 assert.equal(notification?.status,'UNREAD');
+
+const onTrip=valid();
+onTrip.drivers[0]!.status='ON_TRIP';
+assert.equal(mapLegacySnapshot(onTrip).records.find(r=>r.sourceTable==='drivers')?.data?.status,'ON_JOURNEY');
+const incidentReported=valid();
+incidentReported.drivers[0]!.status='INCIDENT_REPORTED';
+assert.equal(mapLegacySnapshot(incidentReported).records.find(r=>r.sourceTable==='drivers')?.data?.status,'INCIDENT_REPORTED');
+
+const invalidTimestamp=valid();
+invalidTimestamp.notifications[0]!.created_at='not-a-date';
+assert.equal(mapLegacySnapshot(invalidTimestamp).records.find(r=>r.sourceTable==='notifications')?.outcome,'quarantined');
 
 const auditorInput=valid();
 auditorInput.users[0]!.role='AUDITOR';
