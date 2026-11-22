@@ -30,18 +30,18 @@ const COLLECTION: Record<TableName, string> = {
   capacity_offers:'capacity-offers', shipments:'shipments', shipment_events:'shipment-events',
   incidents:'incidents', recovery_plans:'recovery-plans', payments:'payments', notifications:'notifications',
 };
-const requiredColumns: Record<TableName, string[]> = {
+export const EXPECTED_COLUMNS: Record<TableName, string[]> = {
   organizations:['id','name','type','status'],
-  users:['id','name','role'],
-  drivers:['id','organization_id','user_id','status'],
-  trucks:['id','organization_id','registration_no','capacity_t','available_t','status'],
-  capacity_offers:['id','truck_id','route','available_t','status','price_rule'],
-  shipments:['id','shipper_id','origin','destination','weight_t','status'],
-  shipment_events:['id','shipment_id','event_type','payload_json','hash'],
-  incidents:['id','truck_id','type','location','status'],
-  recovery_plans:['id','incident_id','affected_shipment_ids','options_json','status'],
-  payments:['id','amount','status'],
-  notifications:['id','recipient_id','type','message','status'],
+  users:['id','name','email','role','organization_id','contact','created_at'],
+  drivers:['id','organization_id','user_id','assigned_truck_id','status'],
+  trucks:['id','organization_id','registration_no','capacity_t','available_t','status','lat','lng','origin','destination','departure_at','driver_id','speed_kmph','heading','location_status','last_location_update'],
+  capacity_offers:['id','truck_id','route','available_t','departure_at','status','price_rule'],
+  shipments:['id','shipper_id','origin','destination','weight_t','deadline_at','status','truck_id','price','currency','created_at'],
+  shipment_events:['id','shipment_id','event_type','payload_json','actor_type','actor_id','timestamp','hash','blockchain_tx','proof_status'],
+  incidents:['id','truck_id','type','location','severity','transcript','structured_summary','status','created_at'],
+  recovery_plans:['id','incident_id','affected_shipment_ids','options_json','selected_truck_id','cost','eta_delta_minutes','status','approved_by','approved_at','created_at'],
+  payments:['id','shipment_id','recovery_plan_id','provider','amount','currency','status','provider_reference','created_at'],
+  notifications:['id','recipient_id','type','message','status','created_at'],
 };
 const str = (v: unknown): string | null => typeof v === 'string' && v.trim() ? v.trim() : null;
 const num = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) ? v : (typeof v === 'string' && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -245,7 +245,7 @@ export function mapLegacySnapshot(input: LegacyTables): MigrationReport {
       all[table]=all[table].filter(row=>!duplicateIds.has(str(row.id)??''));
     }
     let missingColumn: string | null = null;
-    for(const column of requiredColumns[table]) {
+    for(const column of EXPECTED_COLUMNS[table]) {
       const rows=all[table];
       if(rows.length && rows.some(row=>!(column in row))) { missingColumn=column; break; }
     }
