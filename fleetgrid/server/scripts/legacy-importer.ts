@@ -1,0 +1,244 @@
+import assert from 'node:assert/strict';
+
+export type LegacyRow = Record<string, unknown>;
+export type LegacyTables = Record<string, LegacyRow[]>;
+export type MigrationOutcome = 'mapped' | 'quarantined';
+export interface MigrationIssue { code: string; field?: string; severity: 'warning' | 'error'; }
+export interface MigrationRecord {
+  sourceTable: string;
+  sourceId: string;
+  collection: string | null;
+  outcome: MigrationOutcome;
+  data: Record<string, unknown> | null;
+  issues: MigrationIssue[];
+  /** Kept separate from application collections; never included in the dry-run report. */
+  sourceRow: LegacyRow;
+}
+export interface MigrationReport {
+  readOnly: true;
+  summary: Record<string, { source: number; mapped: number; quarantined: number }>;
+  records: MigrationRecord[];
+  issues: Array<{ table: string; id: string; code: string; field?: string; severity: 'warning' | 'error' }>;
+}
+const TABLES = [
+  'organizations','users','drivers','trucks','capacity_offers','shipments',
+  'shipment_events','incidents','recovery_plans','payments','notifications',
+] as const;
+type TableName = typeof TABLES[number];
+const COLLECTION: Record<TableName, string> = {
+  organizations:'organizations', users:'users', drivers:'drivers', trucks:'trucks',
+  capacity_offers:'capacity-offers', shipments:'shipments', shipment_events:'shipment-events',
+  incidents:'incidents', recovery_plans:'recovery-plans', payments:'payments', notifications:'notifications',
+};
+const requiredColumns: Record<TableName, string[]> = {
+  organizations:['id','name','type','status'],
+  users:['id','name','role'],
+  drivers:['id','organization_id','user_id','status'],
+  trucks:['id','organization_id','registration_no','capacity_t','available_t','status'],
+  capacity_offers:['id','truck_id','route','available_t','status','price_rule'],
+  shipments:['id','shipper_id','origin','destination','weight_t','status'],
+  shipment_events:['id','shipment_id','event_type','payload_json','hash'],
+  incidents:['id','truck_id','type','location','status'],
+  recovery_plans:['id','incident_id','affected_shipment_ids','options_json','status'],
+  payments:['id','amount','status'],
+  notifications:['id','recipient_id','type','message','status'],
+};
+const str = (v: unknown): string | null => typeof v === 'string' && v.trim() ? v.trim() : null;
+const num = (v: unknown): number | null => typeof v === 'number' && Number.isFinite(v) ? v : (typeof v === 'string' && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null);
+const iso = (v: unknown): string | null => {
+  if (v == null) return null;
+  const d = v instanceof Date ? v : new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
+const has = (rows: LegacyRow[], id: unknown) => typeof id === 'string' && rows.some((r) => r.id === id);
+function issue(issues: MigrationIssue[], code: string, severity: 'warning'|'error'='error', field?: string) {
+  issues.push({ code, severity, ...(field ? {field} : {}) });
+}
+function parseJson(value: unknown): unknown | null {
+  if (value == null) return null;
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value) as unknown; } catch { return null; }
+}
+function parseRoute(value: unknown): {origin:string;destination:string}|null {
+  const route = str(value);
+  if (!route) return null;
+  const match = /^([^>]+?)\s*->\s*([^>]+?)$/.exec(route);
+  if (!match) return null;
+  const origin = match[1]?.trim(), destination = match[2]?.trim();
+  return origin && destination ? {origin,destination} : null;
+}
+function parseInrPerTon(value: unknown): number | null {
+  const rule = str(value);
+  if (!rule) return null;
+  const match = /^INR\s+([0-9]+(?:\.[0-9]{1,2})?)\s+per\s+Ton$/i.exec(rule);
+  return match ? num(match[1]) : null;
+}
+const enumSet = <T extends string>(value: unknown, allowed: readonly T[]): T | null =>
+  typeof value === 'string' && (allowed as readonly string[]).includes(value) ? value as T : null;
+const TRUCK = ['AVAILABLE','ASSIGNED','LOADING','IN_TRANSIT','DELIVERED','DELAYED','INCIDENT','RECOVERY'] as const;
+const SHIPMENT = ['DRAFT','CAPACITY_RESERVED','CONFIRMED','IN_TRANSIT','AT_RISK','RECOVERY','DELIVERED'] as const;
+const INCIDENT_STATUS = ['OPEN','ANALYZING','PLAN_READY','RESOLVED','ESCALATED'] as const;
+const RECOVERY_STATUS = ['DRAFT','PROPOSED','PENDING_APPROVAL','APPROVED','EXECUTING','COMPLETED','REJECTED'] as const;
+const PAYMENT_STATUS = ['CREATED','PENDING','PAID','FAILED'] as const;
+const INCIDENT_TYPE: Record<string,string> = { BREAKDOWN:'TRUCK_BREAKDOWN', TRUCK_BREAKDOWN:'TRUCK_BREAKDOWN', ACCIDENT:'ACCIDENT', DELAY:'DELAY', CARGO_DAMAGE:'CARGO_DAMAGE', ROUTE_BLOCKED:'ROUTE_BLOCKED', OTHER:'OTHER' };
+const actorMap: Record<string,string> = { SHIPPER:'BUSINESS', BUSINESS:'BUSINESS', SYSTEM:'SYSTEM', AGENT:'AGENT', OPERATOR:'OPERATOR', DRIVER:'DRIVER' };
+
+function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): MigrationRecord {
+  const issues: MigrationIssue[] = [];
+  const id = str(row.id);
+  if (!id) issue(issues,'INVALID_OR_MISSING_PRIMARY_KEY');
+  const orgs=all.organizations??[], users=all.users??[], drivers=all.drivers??[], trucks=all.trucks??[];
+  const offers=all.capacity_offers??[], shipments=all.shipments??[], incidents=all.incidents??[], plans=all.recovery_plans??[];
+  const mapped = (collection: string, data: Record<string,unknown>): MigrationRecord => ({
+    sourceTable:table, sourceId:id??'<missing-id>', collection, outcome:issues.some(i=>i.severity==='error')?'quarantined':'mapped',
+    data:issues.some(i=>i.severity==='error')?null:data, issues, sourceRow:row,
+  });
+  const required = (value: unknown, field: string) => { const v=str(value); if(!v) issue(issues,'REQUIRED_VALUE_MISSING','error',field); return v; };
+  const relationship = (value: unknown, parent: LegacyRow[], field: string, requiredLink=false): string|null => {
+    const v=str(value);
+    if(!v){ if(requiredLink) issue(issues,'REQUIRED_RELATIONSHIP_MISSING','error',field); return null; }
+    if(!has(parent,v)){ issue(issues,requiredLink?'REQUIRED_PARENT_NOT_FOUND':'OPTIONAL_RELATIONSHIP_NOT_FOUND',requiredLink?'error':'warning',field); return null; }
+    return v;
+  };
+  switch(table) {
+    case 'organizations': {
+      const type=enumSet(row.type,['SHIPPER','FLEET_OPERATOR'] as const);
+      const status=enumSet(row.status,['ACTIVE','SUSPENDED'] as const);
+      if(!type) issue(issues,'UNKNOWN_OR_NULL_ORGANIZATION_TYPE','error','type');
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_ORGANIZATION_STATUS','error','status');
+      return mapped(COLLECTION[table],{id,name:required(row.name,'name'),type,status,createdAt:iso(row.created_at)});
+    }
+    case 'users': {
+      const roleMap: Record<string,string>={SHIPPER:'BUSINESS',DRIVER:'DRIVER',OPERATOR:'OPERATOR'};
+      const role=typeof row.role==='string'?roleMap[row.role]:undefined;
+      if(!role) issue(issues,row.role==='AUDITOR'?'ROLE_REQUIRES_ADMIN_REVIEW':'UNKNOWN_OR_NULL_ROLE','error','role');
+      const organizationId=relationship(row.organization_id,orgs,'organizationId',false);
+      return mapped(COLLECTION[table],{id,name:required(row.name,'name'),role,organizationId,contact:str(row.contact),createdAt:iso(row.created_at)});
+    }
+    case 'drivers': {
+      const userId=relationship(row.user_id,users,'userId',true);
+      relationship(row.organization_id,orgs,'organizationId',true);
+      const user=users.find(u=>u.id===userId);
+      const statusMap: Record<string,string>={AVAILABLE:'AVAILABLE',ON_TRIP:'ON_JOURNEY',ON_JOURNEY:'ON_JOURNEY',OFF_DUTY:'OFF_DUTY',INCIDENT_REPORTED:'INCIDENT_REPORTED'};
+      const status=typeof row.status==='string'?statusMap[row.status]:undefined;
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_DRIVER_STATUS','error','status');
+      const assignedTruckId=relationship(row.assigned_truck_id,trucks,'assignedTruckId');
+      return mapped(COLLECTION[table],{id,organizationId:str(row.organization_id),userId,name:str(user?.name),phone:null,assignedTruckId,status,createdAt:null});
+    }
+    case 'trucks': {
+      relationship(row.organization_id,orgs,'organizationId',true);
+      const status=enumSet(row.status,TRUCK);
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_TRUCK_STATUS','error','status');
+      const driverId=relationship(row.driver_id,drivers,'driverId');
+      const capacityT=num(row.capacity_t), availableT=num(row.available_t);
+      if(capacityT===null) issue(issues,'INVALID_CAPACITY','error','capacity_t');
+      if(availableT===null) issue(issues,'INVALID_AVAILABLE_CAPACITY','error','available_t');
+      return mapped(COLLECTION[table],{id,organizationId:str(row.organization_id),registrationNo:required(row.registration_no,'registration_no'),capacityT,availableT,status,lat:num(row.lat),lng:num(row.lng),origin:str(row.origin),destination:str(row.destination),departureAt:iso(row.departure_at),driverId,createdAt:null});
+    }
+    case 'capacity_offers': {
+      relationship(row.truck_id,trucks,'truckId',true);
+      const route=parseRoute(row.route);
+      if(!route) issue(issues,'ROUTE_NOT_PARSEABLE','error','route');
+      const statusMap:Record<string,string>={OPEN:'OPEN',RESERVED:'HELD',HELD:'HELD',CLOSED:'CLOSED'};
+      const status=typeof row.status==='string'?statusMap[row.status]:undefined;
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_CAPACITY_STATUS','error','status');
+      const availableT=num(row.available_t);
+      if(availableT===null) issue(issues,'INVALID_AVAILABLE_CAPACITY','error','available_t');
+      const pricePerT=parseInrPerTon(row.price_rule);
+      if(pricePerT===null) issue(issues,'PRICE_RULE_NOT_EXPLICIT_INR_PER_TON','warning','price_rule');
+      return mapped(COLLECTION[table],{id,truckId:str(row.truck_id),route:str(row.route),origin:route?.origin??null,destination:route?.destination??null,availableT,departureAt:iso(row.departure_at),status,priceRule:str(row.price_rule),pricePerT,updatedAt:null});
+    }
+    case 'shipments': {
+      relationship(row.shipper_id,orgs,'shipperId',true);
+      const truckId=relationship(row.truck_id,trucks,'truckId');
+      const status=enumSet(row.status,SHIPMENT);
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_SHIPMENT_STATUS','error','status');
+      const weightT=num(row.weight_t), price=num(row.price);
+      if(weightT===null) issue(issues,'INVALID_WEIGHT','error','weight_t');
+      if(price===null) issue(issues,'PRICE_UNKNOWN_NOT_PAYABLE','warning','price');
+      const currency=str(row.currency);
+      return mapped(COLLECTION[table],{id,reference:null,cargoName:null,shipperId:str(row.shipper_id),origin:required(row.origin,'origin'),destination:required(row.destination,'destination'),weightT,deadlineAt:iso(row.deadline_at),status,truckId,capacityOfferId:null,price,currency,createdAt:iso(row.created_at),updatedAt:null});
+    }
+    case 'shipment_events': {
+      relationship(row.shipment_id,shipments,'shipmentId',true);
+      const payload=parseJson(row.payload_json);
+      if(payload===null || typeof payload!=='object' || Array.isArray(payload)) issue(issues,'EVENT_PAYLOAD_NOT_JSON_OBJECT','error','payload_json');
+      const actor=typeof row.actor_type==='string'?actorMap[row.actor_type]:undefined;
+      if(!actor) issue(issues,'UNKNOWN_OR_NULL_EVENT_ACTOR','error','actor_type');
+      const proof=enumSet(row.proof_status,['PENDING','CONFIRMED','FAILED','FALLBACK_RECORDED'] as const);
+      if(!proof) issue(issues,'UNKNOWN_OR_NULL_PROOF_STATUS','error','proof_status');
+      return mapped(COLLECTION[table],{id,shipmentId:str(row.shipment_id),incidentId:null,truckId:null,eventType:required(row.event_type,'event_type'),payload,actorType:actor,actorId:str(row.actor_id),timestamp:iso(row.timestamp),hash:required(row.hash,'hash'),blockchainTx:str(row.blockchain_tx),proofStatus:proof});
+    }
+    case 'incidents': {
+      relationship(row.truck_id,trucks,'truckId',true);
+      const type=typeof row.type==='string'?INCIDENT_TYPE[row.type]:undefined;
+      if(!type) issue(issues,'UNKNOWN_OR_NULL_INCIDENT_TYPE','error','type');
+      const status=enumSet(row.status,INCIDENT_STATUS);
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_INCIDENT_STATUS','error','status');
+      const severity=enumSet(row.severity,['LOW','MEDIUM','HIGH','CRITICAL'] as const);
+      return mapped(COLLECTION[table],{id,truckId:str(row.truck_id),type,location:required(row.location,'location'),severity,transcript:str(row.transcript),structuredSummary:str(row.structured_summary),status,source:'LEGACY_IMPORT',affectedShipmentIds:null,recoveryPlanId:null,createdAt:iso(row.created_at),updatedAt:null});
+    }
+    case 'recovery_plans': {
+      relationship(row.incident_id,incidents,'incidentId',true);
+      const affected=parseJson(row.affected_shipment_ids);
+      const options=parseJson(row.options_json);
+      if(affected!==null && (!Array.isArray(affected)||!affected.every(v=>typeof v==='string'))) issue(issues,'INVALID_AFFECTED_SHIPMENT_IDS','error','affected_shipment_ids');
+      if(options!==null && !Array.isArray(options)) issue(issues,'INVALID_RECOVERY_OPTIONS','error','options_json');
+      if(Array.isArray(affected)) for(const sid of affected) if(!has(shipments,sid)) issue(issues,'RECOVERY_OPTION_SHIPMENT_NOT_FOUND','error','affected_shipment_ids');
+      if(Array.isArray(options)) for(const option of options) {
+        if(!option || typeof option!=='object' || Array.isArray(option) || typeof (option as Record<string,unknown>).truckId!=='string') { issue(issues,'INVALID_RECOVERY_OPTION_SHAPE','error','options_json'); continue; }
+        if(!has(trucks,(option as Record<string,unknown>).truckId)) issue(issues,'RECOVERY_OPTION_TRUCK_NOT_FOUND','error','options_json');
+      }
+      const selectedTruckId=relationship(row.selected_truck_id,trucks,'selectedTruckId');
+      const status=enumSet(row.status,RECOVERY_STATUS);
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_RECOVERY_STATUS','error','status');
+      const cost=num(row.cost), etaDeltaMinutes=num(row.eta_delta_minutes);
+      return mapped(COLLECTION[table],{id,incidentId:str(row.incident_id),affectedShipmentIds:affected,options,selectedTruckId,cost,etaDeltaMinutes,status,approvedBy:str(row.approved_by),approvedAt:iso(row.approved_at),createdAt:iso(row.created_at),updatedAt:null});
+    }
+    case 'payments': {
+      const shipmentId=relationship(row.shipment_id,shipments,'shipmentId');
+      const recoveryPlanId=relationship(row.recovery_plan_id,plans,'recoveryPlanId');
+      const status=enumSet(row.status,PAYMENT_STATUS);
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_PAYMENT_STATUS','error','status');
+      const amount=num(row.amount);
+      if(amount===null) issue(issues,'INVALID_PAYMENT_AMOUNT','error','amount');
+      const currency=str(row.currency), provider=str(row.provider);
+      if(!currency||!provider) issue(issues,'PAYMENT_NEEDS_PROVIDER_RECONCILIATION','warning');
+      return mapped(COLLECTION[table],{id,shipmentId,recoveryPlanId,provider,amount,currency,status,providerReference:str(row.provider_reference),createdAt:iso(row.created_at),updatedAt:null});
+    }
+    case 'notifications': {
+      const status=enumSet(row.status,['UNREAD','READ','SENT'] as const);
+      if(!status) issue(issues,'UNKNOWN_OR_NULL_NOTIFICATION_STATUS','error','status');
+      return mapped(COLLECTION[table],{id,recipientId:required(row.recipient_id,'recipient_id'),type:required(row.type,'type'),message:required(row.message,'message'),status,createdAt:iso(row.created_at)});
+    }
+  }
+}
+
+export function mapLegacySnapshot(input: LegacyTables): MigrationReport {
+  const all: LegacyTables = Object.fromEntries(TABLES.map(t=>[t,input[t]??[]]));
+  const records: MigrationRecord[]=[];
+  for(const table of TABLES) {
+    for(const column of requiredColumns[table]) {
+      const rows=all[table];
+      if(rows.length && rows.some(row=>!(column in row))) {
+        for(const row of rows) records.push({sourceTable:table,sourceId:str(row.id)??'<missing-id>',collection:null,outcome:'quarantined',data:null,issues:[{code:'SOURCE_SCHEMA_COLUMN_MISSING',field:column,severity:'error'}],sourceRow:row});
+        break;
+      }
+    }
+    if(records.some(r=>r.sourceTable===table)) continue;
+    for(const row of all[table]) records.push(makeRecord(table,row,all));
+  }
+  // A row with a broken FK should be quarantined; optional references are warnings and null.
+  const summary: MigrationReport['summary']={};
+  for(const table of TABLES) {
+    const tableRecords=records.filter(r=>r.sourceTable===table);
+    summary[table]={source:all[table].length,mapped:tableRecords.filter(r=>r.outcome==='mapped').length,quarantined:tableRecords.filter(r=>r.outcome==='quarantined').length};
+  }
+  const issues=records.flatMap(r=>r.issues.map(i=>({table:r.sourceTable,id:r.sourceId,code:i.code,...(i.field?{field:i.field}:{}),severity:i.severity})));
+  return {readOnly:true,summary,records,issues};
+}
+
+export function assertSourceTables(input: LegacyTables): void {
+  assert.ok(input && typeof input==='object','Legacy snapshot must be an object.');
+  for(const table of Object.keys(input)) assert.ok((TABLES as readonly string[]).includes(table),`Unexpected source table: ${table}`);
+}
