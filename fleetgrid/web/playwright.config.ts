@@ -21,7 +21,7 @@ export default defineConfig({
     {
       command: `rm -rf "${dataDir}" && mkdir -p "${dataDir}" && DATA_DIR="${dataDir}" AUTO_SEED=false NODE_ENV=test FLEETGRID_TEST_BYPASS_AUTH=false CORS_ORIGIN=http://127.0.0.1:5173 RESEND_API_KEY= EMAIL_FROM= APP_BASE_URL= PORT=4000 HOST=127.0.0.1 npm run dev --prefix ../server`,
       url: 'http://127.0.0.1:4000/health',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: Boolean(process.env.CI),
       timeout: 60_000,
     },
     {
