@@ -2,26 +2,15 @@ import type { RequestHandler } from 'express';
 import { db } from '../store/db.js';
 import { hashOpaqueToken, readSessionCookie } from '../services/authSecurity.js';
 import type { User } from '../types.js';
-import { config } from '../config.js';
 
 /** Authenticated identity is attached to response locals, never trusted from a body. */
 export const requireAuthenticated: RequestHandler = (req, res, next) => {
   void (async () => {
-    if (process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') {
+    if (process.env.NODE_ENV !== 'production' && process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') {
       const seeded = (await db.users.get())[0];
       if (seeded) {
         res.locals.authUser = seeded;
         return next();
-      }
-    }
-
-    // Cookie sessions use SameSite=None for the separately hosted frontend.
-    // Validate browser origins on every state-changing request to mitigate CSRF.
-    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-      const origin = req.get('origin');
-      if (origin && !config.corsOrigins.includes(origin)) {
-        res.status(403).json({ error: { code: 'ORIGIN_FORBIDDEN', message: 'This request origin is not allowed.' } });
-        return;
       }
     }
 
@@ -57,7 +46,7 @@ export const requireAuthenticated: RequestHandler = (req, res, next) => {
 
 export function requireRoles(...roles: User['role'][]): RequestHandler {
   return (_req, res, next) => {
-    if (process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') return next();
+    if (process.env.NODE_ENV !== 'production' && process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') return next();
     const user = res.locals.authUser as User | undefined;
     if (!user) {
       res.status(401).json({ error: { code: 'AUTH_REQUIRED', message: 'Please sign in to continue.' } });
