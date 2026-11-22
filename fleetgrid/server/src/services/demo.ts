@@ -1,4 +1,4 @@
-import { config } from '../config.js';
+import { config, isProductionEnvironment } from '../config.js';
 import { buildSeedData } from '../seed/seed.js';
 import { db } from '../store/db.js';
 import { hub } from './realtime.js';
@@ -36,7 +36,7 @@ export async function resetDemo(): Promise<{ trucks: number; shipments: number }
 /** Seeds automatically on a fresh clone so the demo works with zero manual steps. */
 export async function ensureSeeded(): Promise<{ seeded: boolean; trucks: number; shipments: number }> {
   // Never populate a production database with deterministic demo identities or fleet records.
-  if (process.env.NODE_ENV === 'production') {
+  if (isProductionEnvironment()) {
     return { seeded: false, trucks: (await db.trucks.get()).length, shipments: (await db.shipments.get()).length };
   }
   const existingTrucks = await db.trucks.get();
