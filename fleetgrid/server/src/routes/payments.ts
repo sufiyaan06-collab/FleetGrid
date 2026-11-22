@@ -7,6 +7,7 @@ import { requiredParam } from '../middleware/params.js';
 import { confirmDodoPayment, createDodoCheckout, failDodoPayment, getPayment, listPayments } from '../services/payments.js';
 import { db } from '../store/db.js';
 import { requireAuthenticated, requireRoles } from '../middleware/auth.js';
+import { requireTrustedOrigin } from '../middleware/trustedOrigin.js';
 import { ApiError } from '../lib/errors.js';
 import type { User } from '../types.js';
 
@@ -87,6 +88,7 @@ paymentsRouter.post(
   }),
 );
 
+paymentsRouter.use(requireTrustedOrigin);
 paymentsRouter.use(requireAuthenticated);
 
 const createDodoCheckoutSchema = z.object({
