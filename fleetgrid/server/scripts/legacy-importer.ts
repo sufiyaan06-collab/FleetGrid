@@ -51,6 +51,12 @@ const iso = (v: unknown): string | null => {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 };
 const has = (rows: LegacyRow[], id: unknown) => typeof id === 'string' && rows.some((r) => r.id === id);
+function timestamp(value: unknown, issues: MigrationIssue[], field: string): string | null {
+  if (value == null) return null;
+  const parsed = iso(value);
+  if (!parsed) issue(issues,'INVALID_TIMESTAMP','error',field);
+  return parsed;
+}
 function issue(issues: MigrationIssue[], code: string, severity: 'warning'|'error'='error', field?: string) {
   issues.push({ code, severity, ...(field ? {field} : {}) });
 }
@@ -107,7 +113,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       const status=enumSet(row.status,['ACTIVE','SUSPENDED'] as const);
       if(!type) issue(issues,'UNKNOWN_OR_NULL_ORGANIZATION_TYPE','error','type');
       if(!status) issue(issues,'UNKNOWN_OR_NULL_ORGANIZATION_STATUS','error','status');
-      return mapped(COLLECTION[table],{id,name:required(row.name,'name'),type,status,createdAt:iso(row.created_at)});
+      return mapped(COLLECTION[table],{id,name:required(row.name,'name'),type,status,createdAt:timestamp(row.created_at,issues,'created_at')});
     }
     case 'users': {
       const roleMap: Record<string,string>={SHIPPER:'BUSINESS',DRIVER:'DRIVER',OPERATOR:'OPERATOR'};
@@ -118,7 +124,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       if(organizationId && linkedOrg && ((role==='BUSINESS' && linkedOrg.type!=='SHIPPER') || (role!=='BUSINESS' && linkedOrg.type!=='FLEET_OPERATOR'))) {
         issue(issues,'USER_ORGANIZATION_ROLE_MISMATCH','error','organization_id');
       }
-      return mapped(COLLECTION[table],{id,name:required(row.name,'name'),role,organizationId,contact:str(row.contact),createdAt:iso(row.created_at)});
+      return mapped(COLLECTION[table],{id,name:required(row.name,'name'),role,organizationId,contact:str(row.contact),createdAt:timestamp(row.created_at,issues,'created_at')});
     }
     case 'drivers': {
       const userId=relationship(row.user_id,users,'userId',true);
@@ -140,7 +146,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       const capacityT=num(row.capacity_t), availableT=num(row.available_t);
       if(capacityT===null) issue(issues,'INVALID_CAPACITY','error','capacity_t');
       if(availableT===null) issue(issues,'INVALID_AVAILABLE_CAPACITY','error','available_t');
-      return mapped(COLLECTION[table],{id,organizationId:str(row.organization_id),registrationNo:required(row.registration_no,'registration_no'),capacityT,availableT,status,lat:num(row.lat),lng:num(row.lng),origin:str(row.origin),destination:str(row.destination),departureAt:iso(row.departure_at),driverId,createdAt:null});
+      return mapped(COLLECTION[table],{id,organizationId:str(row.organization_id),registrationNo:required(row.registration_no,'registration_no'),capacityT,availableT,status,lat:num(row.lat),lng:num(row.lng),origin:str(row.origin),destination:str(row.destination),departureAt:timestamp(row.departure_at,issues,'departure_at'),driverId,createdAt:null});
     }
     case 'capacity_offers': {
       relationship(row.truck_id,trucks,'truckId',true);
@@ -153,7 +159,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       if(availableT===null) issue(issues,'INVALID_AVAILABLE_CAPACITY','error','available_t');
       const pricePerT=parseInrPerTon(row.price_rule);
       if(pricePerT===null) issue(issues,'PRICE_RULE_NOT_EXPLICIT_INR_PER_TON','warning','price_rule');
-      return mapped(COLLECTION[table],{id,truckId:str(row.truck_id),route:str(row.route),origin:route?.origin??null,destination:route?.destination??null,availableT,departureAt:iso(row.departure_at),status,priceRule:str(row.price_rule),pricePerT,updatedAt:null});
+      return mapped(COLLECTION[table],{id,truckId:str(row.truck_id),route:str(row.route),origin:route?.origin??null,destination:route?.destination??null,availableT,departureAt:timestamp(row.departure_at,issues,'departure_at'),status,priceRule:str(row.price_rule),pricePerT,updatedAt:null});
     }
     case 'shipments': {
       relationship(row.shipper_id,orgs,'shipperId',true);
@@ -166,7 +172,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       const currency=str(row.currency);
       if(!currency) issue(issues,'SHIPMENT_CURRENCY_UNKNOWN_NOT_PAYABLE','warning','currency');
       if(price===0) issue(issues,'ZERO_PRICE_NOT_PAYABLE','warning','price');
-      return mapped(COLLECTION[table],{id,reference:null,cargoName:null,shipperId:str(row.shipper_id),origin:required(row.origin,'origin'),destination:required(row.destination,'destination'),weightT,deadlineAt:iso(row.deadline_at),status,truckId,capacityOfferId:null,price,currency,createdAt:iso(row.created_at),updatedAt:null});
+      return mapped(COLLECTION[table],{id,reference:null,cargoName:null,shipperId:str(row.shipper_id),origin:required(row.origin,'origin'),destination:required(row.destination,'destination'),weightT,deadlineAt:timestamp(row.deadline_at,issues,'deadline_at'),status,truckId,capacityOfferId:null,price,currency,createdAt:timestamp(row.created_at,issues,'created_at'),updatedAt:null});
     }
     case 'shipment_events': {
       relationship(row.shipment_id,shipments,'shipmentId',true);
@@ -177,7 +183,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       if(row.actor_type!=null && !actor) issue(issues,'UNKNOWN_EVENT_ACTOR','error','actor_type');
       const proof=row.proof_status==null ? null : enumSet(row.proof_status,['PENDING','CONFIRMED','FAILED','FALLBACK_RECORDED'] as const);
       if(row.proof_status!=null && !proof) issue(issues,'UNKNOWN_PROOF_STATUS','error','proof_status');
-      return mapped(COLLECTION[table],{id,shipmentId:str(row.shipment_id),incidentId:null,truckId:null,eventType:required(row.event_type,'event_type'),payload,actorType:actor??null,actorId:str(row.actor_id),timestamp:iso(row.timestamp),hash:required(row.hash,'hash'),blockchainTx:str(row.blockchain_tx),proofStatus:proof??null});
+      return mapped(COLLECTION[table],{id,shipmentId:str(row.shipment_id),incidentId:null,truckId:null,eventType:required(row.event_type,'event_type'),payload,actorType:actor??null,actorId:str(row.actor_id),timestamp:timestamp(row.timestamp,issues,'timestamp'),hash:required(row.hash,'hash'),blockchainTx:str(row.blockchain_tx),proofStatus:proof??null});
     }
     case 'incidents': {
       relationship(row.truck_id,trucks,'truckId',true);
@@ -186,7 +192,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       const status=enumSet(row.status,INCIDENT_STATUS);
       if(!status) issue(issues,'UNKNOWN_OR_NULL_INCIDENT_STATUS','error','status');
       const severity=enumSet(row.severity,['LOW','MEDIUM','HIGH','CRITICAL'] as const);
-      return mapped(COLLECTION[table],{id,truckId:str(row.truck_id),type,location:required(row.location,'location'),severity,transcript:str(row.transcript),structuredSummary:str(row.structured_summary),status,source:'LEGACY_IMPORT',affectedShipmentIds:null,recoveryPlanId:null,createdAt:iso(row.created_at),updatedAt:null});
+      return mapped(COLLECTION[table],{id,truckId:str(row.truck_id),type,location:required(row.location,'location'),severity,transcript:str(row.transcript),structuredSummary:str(row.structured_summary),status,source:'LEGACY_IMPORT',affectedShipmentIds:null,recoveryPlanId:null,createdAt:timestamp(row.created_at,issues,'created_at'),updatedAt:null});
     }
     case 'recovery_plans': {
       relationship(row.incident_id,incidents,'incidentId',true);
@@ -210,7 +216,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       const status=enumSet(row.status,RECOVERY_STATUS);
       if(!status) issue(issues,'UNKNOWN_OR_NULL_RECOVERY_STATUS','error','status');
       const cost=num(row.cost), etaDeltaMinutes=num(row.eta_delta_minutes);
-      return mapped(COLLECTION[table],{id,incidentId:str(row.incident_id),affectedShipmentIds:affected,options,selectedTruckId,cost,etaDeltaMinutes,status,approvedBy:str(row.approved_by),approvedAt:iso(row.approved_at),createdAt:iso(row.created_at),updatedAt:null});
+      return mapped(COLLECTION[table],{id,incidentId:str(row.incident_id),affectedShipmentIds:affected,options,selectedTruckId,cost,etaDeltaMinutes,status,approvedBy:str(row.approved_by),approvedAt:timestamp(row.approved_at,issues,'approved_at'),createdAt:timestamp(row.created_at,issues,'created_at'),updatedAt:null});
     }
     case 'payments': {
       const shipmentId=relationship(row.shipment_id,shipments,'shipmentId');
@@ -221,12 +227,12 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       if(amount===null) issue(issues,'INVALID_PAYMENT_AMOUNT','error','amount');
       const currency=str(row.currency), provider=str(row.provider);
       if(!currency||!provider) issue(issues,'PAYMENT_NEEDS_PROVIDER_RECONCILIATION','warning');
-      return mapped(COLLECTION[table],{id,shipmentId,recoveryPlanId,provider,amount,currency,status,providerReference:null,createdAt:iso(row.created_at),updatedAt:null});
+      return mapped(COLLECTION[table],{id,shipmentId,recoveryPlanId,provider,amount,currency,status,providerReference:null,createdAt:timestamp(row.created_at,issues,'created_at'),updatedAt:null});
     }
     case 'notifications': {
       const status=enumSet(row.status,['UNREAD','READ','SENT'] as const);
       if(!status) issue(issues,'UNKNOWN_OR_NULL_NOTIFICATION_STATUS','error','status');
-      return mapped(COLLECTION[table],{id,recipientId:required(row.recipient_id,'recipient_id'),type:required(row.type,'type'),message:required(row.message,'message'),status,createdAt:iso(row.created_at)});
+      return mapped(COLLECTION[table],{id,recipientId:required(row.recipient_id,'recipient_id'),type:required(row.type,'type'),message:required(row.message,'message'),status,createdAt:timestamp(row.created_at,issues,'created_at')});
     }
   }
 }
