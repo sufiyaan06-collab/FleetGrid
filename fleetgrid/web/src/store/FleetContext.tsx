@@ -197,6 +197,11 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       try {
         // REGISTER, LIVE_MAP, PAYMENTS, and LANDING are screens, so there is no seeded role to log into for them.
         if (next === 'REGISTER' || next === 'LIVE_MAP' || next === 'PAYMENTS' || next === 'LANDING' || next === 'LOGIN') return;
+        // An authenticated user changes screens inside their existing session; never replace it with a demo identity.
+        if (session?.mode === 'authenticated') {
+          await refresh();
+          return;
+        }
         const login = await api.demoLogin(next);
         setSession(login);
         await refresh();
@@ -204,7 +209,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         setError((err as Error).message);
       }
     },
-    [refresh],
+    [refresh, session],
   );
 
   const adoptAccount = useCallback((next: Mode, account: DemoLoginResponse) => {
