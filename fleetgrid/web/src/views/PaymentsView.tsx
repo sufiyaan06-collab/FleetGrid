@@ -351,7 +351,7 @@ export function PaymentsView() {
           <div className="w-full max-w-lg rounded-xl border border-healthy/40 bg-base-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-base-700 pb-3">
               <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold', activeReceipt.status === 'PAID' ? 'bg-healthy text-base-950' : 'bg-warn text-base-950">
+                <span className={cn('flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold', activeReceipt.status === 'PAID' ? 'bg-healthy text-base-950' : 'bg-warn text-base-950')}>
                   {activeReceipt.status === 'PAID' ? '✓' : '…'}
                 </span>
                 <h3 className="font-mono text-sm font-bold text-ink-50">FleetGrid Payment Record</h3>
