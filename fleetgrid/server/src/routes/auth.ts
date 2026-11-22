@@ -21,8 +21,10 @@ import {
 } from '../services/authSecurity.js';
 import { ApiError as AuthApiError } from '../lib/errors.js';
 import { runExclusive } from '../lib/mutex.js';
+import { requireTrustedOrigin } from '../middleware/trustedOrigin.js';
 
 export const authRouter: Router = Router();
+authRouter.use(requireTrustedOrigin);
 
 async function authenticatedSession(userId: string) {
   const user = await db.users.findById(userId);
