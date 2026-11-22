@@ -15,7 +15,9 @@ import {
   hashPassword,
   issueSessionToken,
   issueVerificationToken,
+  issuePasswordResetToken,
   readSessionCookie,
+  sendPasswordResetEmail,
   sendVerificationEmail,
   setSessionCookie,
   verifyPassword,
@@ -328,6 +330,60 @@ authRouter.post(
     }
     // Do not reveal whether an email has an account.
     res.json({ ok: true, message: 'If the account needs verification, a new email has been sent.' });
+  }),
+);
+
+authRouter.post(
+  '/auth/forgot-password',
+  validateBody(z.object({ email: z.string().email().max(254) })),
+  authRateLimit({ windowMs: 60 * 60 * 1000, max: 20, identityMax: 3, message: 'Too many password reset requests. Please try again later.', identity: emailIdentity }),
+  asyncHandler(async (req, res) => {
+    assertEmailProviderConfigured();
+    const email = (req.body as { email: string }).email.trim().toLowerCase();
+    const matches = await db.authAccounts.find((account) => account.email === email);
+    const account = matches[0];
+    if (account) {
+      const reset = issuePasswordResetToken();
+      await db.authAccounts.update(account.id, {
+        passwordResetTokenHash: reset.tokenHash,
+        passwordResetExpiresAt: reset.expiresAt,
+        updatedAt: new Date().toISOString(),
+      });
+      await sendPasswordResetEmail(email, reset.token);
+    }
+    // Same response whether or not the address has an account.
+    res.status(202).json({ ok: true, message: 'If an account exists for that email, a password reset link has been sent.' });
+  }),
+);
+
+authRouter.post(
+  '/auth/reset-password',
+  validateBody(z.object({ token: z.string().min(32).max(200), password: z.string().min(10).max(128) })),
+  authRateLimit({ windowMs: 60 * 60 * 1000, max: 20, message: 'Too many password reset attempts. Please try again later.' }),
+  asyncHandler(async (req, res) => {
+    const { token, password } = req.body as { token: string; password: string };
+    const result = await runExclusive(async () => {
+      const tokenHash = hashOpaqueToken(token);
+      const matches = await db.authAccounts.find((account) => account.passwordResetTokenHash === tokenHash);
+      const account = matches[0];
+      if (!account?.passwordResetExpiresAt || Date.parse(account.passwordResetExpiresAt) < Date.now()) {
+        throw new AuthApiError(400, 'PASSWORD_RESET_LINK_INVALID', 'This password reset link is invalid or expired. Request a new one.');
+      }
+      const updated = await db.authAccounts.update(account.id, {
+        passwordHash: await hashPassword(password),
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+        sessionTokenHash: null,
+        sessionExpiresAt: null,
+        failedLoginCount: 0,
+        lockedUntil: null,
+        updatedAt: new Date().toISOString(),
+      });
+      if (!updated) throw new AuthApiError(400, 'PASSWORD_RESET_LINK_INVALID', 'This password reset link is invalid or expired. Request a new one.');
+      return { ok: true, message: 'Password updated. Sign in with your new password.' };
+    });
+    clearSessionCookie(res);
+    res.json(result);
   }),
 );
 
