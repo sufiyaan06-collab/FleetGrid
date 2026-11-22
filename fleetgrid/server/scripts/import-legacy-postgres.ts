@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { mapLegacySnapshot, type LegacyRow, type LegacyTables } from './legacy-importer.js';
+import { EXPECTED_COLUMNS, mapLegacySnapshot, type LegacyRow, type LegacyTables } from './legacy-importer.js';
 
 /**
  * Strictly read-only Python/PostgreSQL -> Node collection migration preview.
@@ -43,6 +43,28 @@ try {
     if (missing.length) {
       throw new Error(`Legacy schema is incomplete; refusing partial import preview. Missing tables: ${missing.join(', ')}`);
     }
+    const columnResult = await client.query<{
+      table_name: string; column_name: string; data_type: string;
+      is_nullable: 'YES' | 'NO'; column_default: string | null;
+    }>(
+      `SELECT table_name,column_name,data_type,is_nullable,column_default
+       FROM information_schema.columns
+       WHERE table_schema='public' AND table_name=ANY($1::text[])
+       ORDER BY table_name,ordinal_position`,
+      [tableNames],
+    );
+    const actualColumns = new Map<string, Set<string>>();
+    for (const column of columnResult.rows) {
+      if (!actualColumns.has(column.table_name)) actualColumns.set(column.table_name,new Set());
+      actualColumns.get(column.table_name)!.add(column.column_name);
+    }
+    const schemaGaps = tableNames.flatMap(table =>
+      EXPECTED_COLUMNS[table].filter(column=>!actualColumns.get(table)?.has(column))
+        .map(column=>`${table}.${column}`),
+    );
+    if(schemaGaps.length) {
+      throw new Error(`Legacy schema differs from the reviewed model. Refusing import preview until reviewed: ${schemaGaps.join(', ')}`);
+    }
     const snapshot: LegacyTables = {};
     for (const table of tableNames) {
       const result = await client.query<LegacyRow>(
@@ -64,6 +86,13 @@ try {
       mappedRows: Object.values(report.summary).reduce((n,v)=>n+v.mapped,0),
       quarantinedRows: Object.values(report.summary).reduce((n,v)=>n+v.quarantined,0),
       tables: report.summary,
+      sourceSchema: columnResult.rows.map(column=>({
+        table:column.table_name,
+        column:column.column_name,
+        type:column.data_type,
+        nullable:column.is_nullable==='YES',
+        hasDatabaseDefault:column.column_default!==null,
+      })),
       issueCounts,
       notes: [
         'No target database was connected.',
