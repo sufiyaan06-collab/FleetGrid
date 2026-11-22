@@ -143,13 +143,6 @@ export function ControlTower() {
                   >
                     Track on Map
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setReroutingModalOpen(true)}
-                    className="rounded-lg bg-danger px-4 py-2 text-xs font-black uppercase tracking-wider text-base-950 shadow-incident hover:bg-danger/90 cursor-pointer"
-                  >
-                    🚀 Launch AI Highway Reroute
-                  </button>
                 </div>
               </div>
             </div>
