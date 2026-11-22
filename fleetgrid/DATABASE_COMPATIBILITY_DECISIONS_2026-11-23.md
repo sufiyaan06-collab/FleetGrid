@@ -105,3 +105,21 @@ Before any staging write:
 7. Rehearse rollback and prove re-run idempotency.
 
 **Production gate remains NO-GO** until all staging gates pass, provider configuration is verified, a restorable production backup is confirmed, and the user explicitly approves production cutover.
+
+
+## 9. Completeness addendum — nullable legacy defaults and timestamps
+
+A SQLAlchemy/Python default is not a database NOT NULL constraint. Unless the deployed schema metadata proves otherwise, a legacy column declared with a default but without nullable=false may still contain NULL. Therefore the following additional fields must preserve NULL rather than silently applying their ORM defaults:
+
+- **createdAt:** nullable for organizations, users, drivers, trucks, shipments, incidents, recovery plans, payments, and notifications. The legacy organization/driver/truck models do not define creation timestamps at all; several other models define only a client-side default. Shipment-event timestamp is also nullable. No import-time replacement is allowed.
+- **updatedAt:** nullable for every entity where the legacy schema has no updated_at column (including organizations, drivers, trucks, capacity offers, shipments, incidents, recovery plans, and payments).
+- **Shipment currency:** nullable when the stored legacy value is null. The ORM default INR is not proof that every historical row contains INR. A shipment with unknown currency is not payable.
+- **Payment currency, provider, and status:** preserve null if present. Do not infer provider identity or payment state from a Python default. Such a payment must remain non-actionable until reconciled.
+- **Organization status, Driver status, Truck status, Capacity Offer status, Shipment status, Event actor/proof status, Incident severity/status, Recovery Plan status, and Notification status:** a null value is not silently replaced by the ORM default. Quarantine records whose required state-machine status is null; preserve nullable descriptive/metadata fields as null where the application can safely represent them.
+- **Event actorType/proofStatus and event timestamp:** preserve null as unknown if present; do not substitute SYSTEM, PENDING, or the current time.
+- **Incident severity:** preserve null as unknown; do not substitute HIGH.
+- **Recovery Plan cost/ETA/options:** preserve null as unknown; parse JSON only when the source text is non-null. Do not turn null serialized JSON into an asserted empty array.
+- **Capacity Offer priceRule:** preserve null if present. Only parse pricePerT from a non-null, explicitly supported rule.
+- **Shipment price:** preserve the actual stored numeric value; null is unknown and zero is not payable. Do not replace null with the ORM default 0.
+
+These rules are subject to confirmation against live information_schema nullability before any staging apply. If deployed metadata contradicts the checked-in ORM assumptions, the deployed schema wins and the decision record must be amended before import.
