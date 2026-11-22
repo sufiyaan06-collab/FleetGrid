@@ -89,6 +89,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   // remove a one-time verification token from the URL before this provider's
   // session-restoration effect runs.
   const initialModeRef = useRef(mode);
+  const initialPaymentReturnRef = useRef(new URLSearchParams(window.location.search).has('payment'));
 
   const pendingRef = useRef<number | null>(null);
   const flashTimerRef = useRef<number | null>(null);
@@ -163,10 +164,12 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         availableRoles: [account.user.role],
       };
       setSession(restored);
-      setModeState(nextMode);
+      const shouldOpenPayments = initialModeRef.current === 'PAYMENTS' || initialPaymentReturnRef.current;
+      const restoredMode = shouldOpenPayments && account.user.role === 'BUSINESS' ? 'PAYMENTS' : nextMode;
+      setModeState(restoredMode);
       void refresh();
       try {
-        window.localStorage.setItem(MODE_STORAGE_KEY, nextMode);
+        window.localStorage.setItem(MODE_STORAGE_KEY, restoredMode);
       } catch {
         /* private mode: ignore */
       }
