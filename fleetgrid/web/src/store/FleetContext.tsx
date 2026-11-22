@@ -85,6 +85,10 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const [lastEvent, setLastEvent] = useState<{ type: string; at: number } | null>(null);
   const [flashIds, setFlashIds] = useState<string[]>([]);
   const [flashTone, setFlashTone] = useState<FlashKind>('ok');
+  // Capture the route selected during the first render. Child effects may
+  // remove a one-time verification token from the URL before this provider's
+  // session-restoration effect runs.
+  const initialModeRef = useRef(mode);
 
   const pendingRef = useRef<number | null>(null);
   const flashTimerRef = useRef<number | null>(null);
@@ -142,7 +146,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     let active = true;
     // Preserve the verification-link route while restoring an absent session.
     // The Login screen consumes the query token only after explicit user action.
-    const hasVerificationToken = new URLSearchParams(window.location.search).has('token');
+    const shouldPreserveLogin = initialModeRef.current === 'LOGIN';
     void api.me().then((account) => {
       if (!active) return;
       const nextMode = account.user.role === 'BUSINESS'
@@ -169,7 +173,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     }).catch(() => {
       // No valid credential session: never reopen a stale locally remembered role.
       if (!active) return;
-      setModeState(hasVerificationToken ? 'LOGIN' : 'LANDING');
+      setModeState(shouldPreserveLogin ? 'LOGIN' : 'LANDING');
       setSession(null);
       try {
         window.localStorage.removeItem(MODE_STORAGE_KEY);
