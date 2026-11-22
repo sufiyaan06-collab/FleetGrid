@@ -91,3 +91,8 @@ The 2026-11-23 inventory found 3 organizations, 4 users, 1 driver, 3 trucks and 
 ## Go / no-go
 
 **NO-GO for importer apply or production cutover** until role mappings, nullability strategy, parsers, notification/proof semantics, password/account recovery, backup restore test, staging import, reconciliation, and rollback rehearsal are approved and pass.
+
+
+## Superseding decision record (2026-11-23)
+
+The unresolved-policy sections above are historical audit notes and are superseded by [DATABASE_COMPATIBILITY_DECISIONS_2026-11-23.md](./DATABASE_COMPATIBILITY_DECISIONS_2026-11-23.md). That decision record is the authoritative compatibility policy for nullable legacy-origin fields, role mapping, enum preservation, timestamp handling, quarantine rules, privacy, and staging gates. The policy is now decided; importer implementation and all database writes remain gated by the acceptance steps in that record. No production migration, merge, or deployment is authorized.
