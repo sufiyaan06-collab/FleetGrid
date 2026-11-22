@@ -62,3 +62,17 @@ test.describe('FleetGrid browser and API integration', () => {
     await expect(page.getByRole('heading', { name: 'Sign in to FleetGrid' })).toBeVisible();
   });
 });
+
+
+test('operational dashboards hydrate from backend snapshots and preserve role navigation', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Enter Control Tower', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Network Control' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Landing', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /Logistics that/i })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Driver Cab', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Ravi Kumar' })).toBeVisible();
+  await expect(page.getByText('FG-027', { exact: false }).first()).toBeVisible();
+});
