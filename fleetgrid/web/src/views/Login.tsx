@@ -125,7 +125,7 @@ export function Login() {
       </button>
       <h1 className="text-2xl font-semibold tracking-tight text-ink-50">Sign in to FleetGrid</h1>
       <p className="mt-2 text-sm leading-relaxed text-ink-400">Use the email address and password you registered with.</p>
-      <form onSubmit={resetToken ? submitPasswordReset : submit} className="mt-6 rounded-lg border border-base-700 bg-base-800/60 p-5">
+      <form onSubmit={resetToken ? submitPasswordReset : forgotMode ? (event) => { event.preventDefault(); void requestPasswordReset(); } : submit} className="mt-6 rounded-lg border border-base-700 bg-base-800/60 p-5">
         {!resetToken && <div>
           <label className={labelCls} htmlFor="login-email">Email address</label>
           <input id="login-email" className={inputCls} type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
