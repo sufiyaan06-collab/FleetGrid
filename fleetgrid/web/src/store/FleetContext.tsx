@@ -203,6 +203,17 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // Drivers cannot enter the shipper settlement workspace.
+      if (next === 'PAYMENTS' && session?.user.role === 'DRIVER') {
+        setModeState('DRIVER');
+        try {
+          window.localStorage.setItem(MODE_STORAGE_KEY, 'DRIVER');
+        } catch {
+          /* private mode: ignore */
+        }
+        return;
+      }
+
       setModeState(next);
       // Harmless UI preference only — never fleet data.
       try {
