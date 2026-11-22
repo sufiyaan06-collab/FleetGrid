@@ -27,7 +27,7 @@ let resetLinkToken: string | null = null;
 globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (String(input) === 'https://api.resend.com/emails') {
     const payload = JSON.parse(String(init?.body ?? '{}')) as { text?: string };
-    resetLinkToken = payload.text?.match(/resetToken=([^\\s]+)/)?.[1] ?? null;
+    resetLinkToken = payload.text?.match(/resetToken=([^\s]+)/)?.[1] ?? null;
     return new Response('{}', { status: 200 });
   }
   return nativeFetch(input, init);
