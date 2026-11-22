@@ -167,7 +167,7 @@ try {
 
   const shipperB = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenB.token}` } });
   const stateB = await shipperB.json() as { shipments: Array<{ id: string }> };
-  assert.deepEqual(stateB.shipments.map((s) => s.id), ['shipment_b'], 'second shipper cannot see first shipper records');
+  assert.deepEqual(stateB.shipments.map((s) => s.id), ['shipment_b', 'shipment_zero_price', 'shipment_bad_currency'], 'second shipper sees only its own shipments, including payment-validation fixtures');
 
   const crossShipperDetail = await request('/shipments/shipment_b', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
   assert.equal(crossShipperDetail.status, 404, 'shipper cannot open another shipper shipment by ID');
