@@ -1,5 +1,5 @@
 import type { RequestHandler } from 'express';
-import { config } from '../config.js';
+import { config, isProductionEnvironment } from '../config.js';
 
 /**
  * Cookie-authenticated browser mutations must originate from the app itself or
@@ -7,7 +7,7 @@ import { config } from '../config.js';
  * rejected rather than silently bypassing CSRF protection.
  */
 export const requireTrustedOrigin: RequestHandler = (req, res, next) => {
-  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) || process.env.NODE_ENV !== 'production') {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) || !isProductionEnvironment()) {
     next();
     return;
   }
