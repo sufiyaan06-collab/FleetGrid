@@ -148,6 +148,9 @@ paymentsRouter.post(
     }
     // The server-side shipment record is authoritative. Never accept a client-
     // supplied amount as the source of truth or start a zero-value checkout.
+    if (shipment.status !== 'CONFIRMED') {
+      throw ApiError.conflict('The driver must accept the shipment before payment can be collected.');
+    }
     if (!Number.isFinite(shipment.price) || shipment.price <= 0) {
       throw ApiError.badRequest('Set a positive agreed shipment price before starting checkout.');
     }
