@@ -43,8 +43,8 @@ const accounts = [
 const shipments = [
   { id: 'shipment_a', reference: 'A-001', cargoName: 'Private cargo A', shipperId: 'shipper_a', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
   { id: 'shipment_b', reference: 'B-001', cargoName: 'Private cargo B', shipperId: 'shipper_b', origin: 'C', destination: 'D', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
-  { id: 'shipment_zero_price', reference: 'A-002', cargoName: 'Unpriced cargo', shipperId: 'shipper_a', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 0, currency: 'INR', createdAt: now, updatedAt: now },
-  { id: 'shipment_bad_currency', reference: 'A-003', cargoName: 'Invalid currency cargo', shipperId: 'shipper_a', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'IN', createdAt: now, updatedAt: now },
+  { id: 'shipment_zero_price', reference: 'B-002', cargoName: 'Unpriced cargo', shipperId: 'shipper_b', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 0, currency: 'INR', createdAt: now, updatedAt: now },
+  { id: 'shipment_bad_currency', reference: 'B-003', cargoName: 'Invalid currency cargo', shipperId: 'shipper_b', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'IN', createdAt: now, updatedAt: now },
 ];
 for (const [name, rows] of Object.entries({
   'organizations.json': orgs, 'users.json': users, 'auth-accounts.json': accounts,
@@ -259,14 +259,14 @@ try {
 
   const unpricedShipmentCheckout = await request('/payments/dodo/checkout', {
     method: 'POST',
-    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ shipmentId: 'shipment_zero_price', amount: 100, currency: 'INR' }),
   });
   assert.equal(unpricedShipmentCheckout.status, 400, 'checkout rejects shipments without a recorded positive price');
 
   const invalidCurrencyCheckout = await request('/payments/dodo/checkout', {
     method: 'POST',
-    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ shipmentId: 'shipment_bad_currency', amount: 100, currency: 'INR' }),
   });
   assert.equal(invalidCurrencyCheckout.status, 400, 'checkout rejects invalid shipment currency codes');
