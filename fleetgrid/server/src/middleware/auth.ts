@@ -1,12 +1,13 @@
 import type { RequestHandler } from 'express';
 import { db } from '../store/db.js';
+import { isProductionEnvironment } from '../config.js';
 import { hashOpaqueToken, readSessionCookie } from '../services/authSecurity.js';
 import type { User } from '../types.js';
 
 /** Authenticated identity is attached to response locals, never trusted from a body. */
 export const requireAuthenticated: RequestHandler = (req, res, next) => {
   void (async () => {
-    if (process.env.NODE_ENV !== 'production' && process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') {
+    if (!isProductionEnvironment() && process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') {
       const seeded = (await db.users.get())[0];
       if (seeded) {
         res.locals.authUser = seeded;
@@ -46,7 +47,7 @@ export const requireAuthenticated: RequestHandler = (req, res, next) => {
 
 export function requireRoles(...roles: User['role'][]): RequestHandler {
   return (_req, res, next) => {
-    if (process.env.NODE_ENV !== 'production' && process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') return next();
+    if (!isProductionEnvironment() && process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') return next();
     const user = res.locals.authUser as User | undefined;
     if (!user) {
       res.status(401).json({ error: { code: 'AUTH_REQUIRED', message: 'Please sign in to continue.' } });
