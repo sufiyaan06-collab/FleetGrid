@@ -13,6 +13,8 @@ The current importer is intentionally a **read-only preview**, not an apply tool
 - Keeps raw source rows in process memory only for mapping/quarantine analysis. It does not persist or export them.
 - Does not create Node AuthAccount records and does not migrate legacy credentials.
 
+- Legacy payment rows are quarantined pending reconciliation against the payment provider; a historical `PAID` value is not treated as current settlement proof.
+
 The source database credential should itself be a read-only PostgreSQL role. The transaction is independently marked read-only by the importer.
 
 ## Run from the repository root
