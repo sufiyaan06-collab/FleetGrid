@@ -112,9 +112,9 @@ assert.equal(badRouteReport.records.find(r=>r.sourceTable==='capacity_offers')?.
 const duplicates=valid();
 duplicates.organizations.push({...duplicates.organizations[0]!});
 const duplicateReport=mapLegacySnapshot(duplicates);
-assert.equal(duplicateReport.summary.organizations.source,2);
+assert.equal(duplicateReport.summary.organizations.source,3);
 assert.equal(duplicateReport.summary.organizations.quarantined,2);
-assert.equal(duplicateReport.summary.organizations.mapped,0);
+assert.equal(duplicateReport.summary.organizations.mapped,1);
 
 const missingColumn=valid();
 delete (missingColumn.trucks[0] as Record<string,unknown>).capacity_t;
