@@ -32,7 +32,7 @@ services:
       - key: AUTO_SEED
         value: "false"
       - key: APP_BASE_URL
-        value: https://ember-beryl-phi.vercel.app
+        value: https://fleetgrid-app.onrender.com
       - key: CORS_ORIGIN
         value: "https://ember-beryl-phi.vercel.app,https://fleetgrid-app.onrender.com"
       - key: DATABASE_URL
