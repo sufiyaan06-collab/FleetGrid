@@ -7,6 +7,7 @@ const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'fleetgrid_session';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 export interface IssuedToken {
   token: string;
@@ -43,6 +44,7 @@ function issueToken(ttlMs: number): IssuedToken {
 
 export const issueSessionToken = (): IssuedToken => issueToken(SESSION_TTL_MS);
 export const issueVerificationToken = (): IssuedToken => issueToken(VERIFY_TTL_MS);
+export const issuePasswordResetToken = (): IssuedToken => issueToken(PASSWORD_RESET_TTL_MS);
 
 export function setSessionCookie(res: { setHeader(name: string, value: string): void }, token: string): void {
   const production = isProductionEnvironment();
@@ -59,6 +61,36 @@ export function clearSessionCookie(res: { setHeader(name: string, value: string)
   const secure = production ? '; Secure' : '';
   const sameSite = production ? 'None' : 'Lax';
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure}`);
+}
+
+export async function sendPasswordResetEmail(email: string, token: string): Promise<void> {
+  assertEmailProviderConfigured();
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM;
+  const baseUrl = process.env.APP_BASE_URL;
+  if (!apiKey || !from || !baseUrl) {
+    throw new ApiError(503, 'EMAIL_PROVIDER_NOT_CONFIGURED', 'Password reset email is not available yet. Configure the email provider first.');
+  }
+  let url: URL;
+  try {
+    url = new URL('/', baseUrl);
+    url.searchParams.set('resetToken', token);
+  } catch {
+    throw new ApiError(503, 'EMAIL_CONFIGURATION_INVALID', 'APP_BASE_URL must be a valid absolute URL.');
+  }
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from,
+      to: [email],
+      subject: 'Reset your FleetGrid password',
+      text: `Reset your FleetGrid password by opening this link: ${url.toString()}\\n\\nThis link expires in 1 hour. If you did not request this, ignore this email.`,
+    }),
+  });
+  if (!response.ok) {
+    throw new ApiError(502, 'EMAIL_DELIVERY_FAILED', 'FleetGrid could not send the password reset email. Please try again later.');
+  }
 }
 
 export function readSessionCookie(cookieHeader?: string): string | null {
