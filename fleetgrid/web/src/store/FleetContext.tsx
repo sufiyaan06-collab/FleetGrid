@@ -319,7 +319,8 @@ export function useFleet(): FleetContextValue {
 }
 
 function readStoredMode(): Mode | null {
-  if (new URLSearchParams(window.location.search).has('token')) return 'LOGIN';
+  const query = new URLSearchParams(window.location.search);
+  if (query.has('token') || query.has('resetToken')) return 'LOGIN';
   try {
     const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
     if (
