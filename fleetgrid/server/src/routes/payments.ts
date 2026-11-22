@@ -133,7 +133,7 @@ paymentsRouter.use(requireAuthenticated);
 const createDodoCheckoutSchema = z.object({
   shipmentId: z.string().min(2).nullish(),
   recoveryPlanId: z.string().min(2).nullish(),
-  amount: z.number().positive(),
+  amount: z.number().positive().optional(),
   currency: z.string().length(3).optional(),
   customerName: z.string().min(1).optional(),
   customerEmail: z.string().email().optional(),
