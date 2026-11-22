@@ -15,15 +15,25 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [verificationToken, setVerificationToken] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [forgotMode, setForgotMode] = useState(false);
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get('token');
-    if (!token) return;
-    // Do not consume verification links on page load: email security scanners
-    // often prefetch links. Require the user to press the Verify email button.
-    setVerificationToken(token);
-    setNotice('Your verification link is ready. Select Verify email to finish setting up your account.');
-    window.history.replaceState({}, document.title, window.location.pathname);
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const passwordToken = params.get('resetToken');
+    if (token) {
+      // Do not consume verification links on page load: email security scanners
+      // often prefetch links. Require the user to press the Verify email button.
+      setVerificationToken(token);
+      setNotice('Your verification link is ready. Select Verify email to finish setting up your account.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (passwordToken) {
+      setResetToken(passwordToken);
+      setNotice('Choose a new password to complete your password reset.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   }, []);
 
   const verifyEmail = async () => {
@@ -60,6 +70,40 @@ export function Login() {
     }
   };
 
+
+  const requestPasswordReset = async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.forgotPassword(email.trim().toLowerCase());
+      setNotice(result.message);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitPasswordReset = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!resetToken) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.resetPassword(resetToken, newPassword);
+      setResetToken(null);
+      setNewPassword('');
+      setForgotMode(false);
+      setNotice(result.message);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const resend = async () => {
     setBusy(true);
     setError(null);
@@ -81,15 +125,19 @@ export function Login() {
       </button>
       <h1 className="text-2xl font-semibold tracking-tight text-ink-50">Sign in to FleetGrid</h1>
       <p className="mt-2 text-sm leading-relaxed text-ink-400">Use the email address and password you registered with.</p>
-      <form onSubmit={submit} className="mt-6 rounded-lg border border-base-700 bg-base-800/60 p-5">
+      <form onSubmit={resetToken ? submitPasswordReset : submit} className="mt-6 rounded-lg border border-base-700 bg-base-800/60 p-5">
         <div>
           <label className={labelCls} htmlFor="login-email">Email address</label>
           <input id="login-email" className={inputCls} type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
         </div>
-        <div className="mt-4">
+        {!resetToken && !forgotMode && <div className="mt-4">
           <label className={labelCls} htmlFor="login-password">Password</label>
           <input id="login-password" className={inputCls} type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" />
-        </div>
+        </div>}
+        {resetToken && <div className="mt-4">
+          <label className={labelCls} htmlFor="new-password">New password</label>
+          <input id="new-password" className={inputCls} type="password" autoComplete="new-password" minLength={10} required value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="At least 10 characters" />
+        </div>}
         {error && <div className="mt-4 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
         {notice && <div className="mt-4 rounded-md border border-healthy/40 bg-healthy/10 px-3 py-2 text-xs text-healthy">{notice}</div>}
         {verificationToken && (
@@ -97,13 +145,28 @@ export function Login() {
             {busy ? 'Verifying…' : 'Verify email'}
           </button>
         )}
-        <button type="submit" disabled={busy} className={cn('mt-5 w-full rounded-md border border-healthy/40 bg-healthy/10 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-healthy hover:bg-healthy/20 disabled:opacity-50')}>
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-        <button type="button" disabled={busy || !email.trim()} onClick={() => void resend()} className="mt-3 w-full text-xs text-ink-400 underline underline-offset-4 hover:text-ink-100 disabled:opacity-40">
-          Resend verification email
-        </button>
+        {resetToken ? (
+          <button type="submit" disabled={busy || newPassword.length < 10} className={cn('mt-5 w-full rounded-md border border-healthy/40 bg-healthy/10 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-healthy hover:bg-healthy/20 disabled:opacity-50')}>
+            {busy ? 'Updating…' : 'Reset password'}
+          </button>
+        ) : forgotMode ? (
+          <button type="button" disabled={busy || !email.trim()} onClick={() => void requestPasswordReset()} className="mt-5 w-full rounded-md border border-healthy/40 bg-healthy/10 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-healthy disabled:opacity-50">
+            {busy ? 'Sending…' : 'Send password reset link'}
+          </button>
+        ) : (
+          <>
+            <button type="submit" disabled={busy} className={cn('mt-5 w-full rounded-md border border-healthy/40 bg-healthy/10 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-healthy hover:bg-healthy/20 disabled:opacity-50')}>
+              {busy ? 'Signing in…' : 'Sign in'}
+            </button>
+            <button type="button" disabled={busy || !email.trim()} onClick={() => void resend()} className="mt-3 w-full text-xs text-ink-400 underline underline-offset-4 hover:text-ink-100 disabled:opacity-40">
+              Resend verification email
+            </button>
+          </>
+        )}
       </form>
+      {!resetToken && <button type="button" onClick={() => { setForgotMode(value => !value); setError(null); setNotice(null); }} className="mt-4 text-center text-xs text-ink-400 underline underline-offset-4 hover:text-ink-100">
+        {forgotMode ? 'Back to sign in' : 'Forgot password?'}
+      </button>}
       <button type="button" onClick={() => void setMode('REGISTER')} className="mt-5 text-center text-xs text-healthy hover:text-healthy/80">
         New to FleetGrid? Create a shipper or driver account
       </button>
