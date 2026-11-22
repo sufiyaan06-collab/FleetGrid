@@ -24,19 +24,16 @@ export function PaymentsView() {
   const selectedShipment = shipments.find((s: Shipment) => s.id === selectedShipmentId) || shipments[0] || null;
 
   // Form states
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Payment | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'PAID' | 'PENDING'>('ALL');
 
-  // Pricing breakdown
-  const baseRate = selectedShipment?.price || 1700;
-  const tollSurcharge = Math.round(baseRate * 0.08); // 8% FASTag toll estimate
-  const platformEscrowFee = 150;
-  const gst = Math.round((baseRate + tollSurcharge + platformEscrowFee) * 0.18);
-  const totalAmount = baseRate + tollSurcharge + platformEscrowFee + gst;
+  // Use only the price and currency stored on the selected shipment.
+  // Do not invent tolls, platform fees, taxes, or a fallback freight price.
+  const totalAmount = selectedShipment?.price ?? 0;
+  const currency = selectedShipment?.currency ?? 'INR';
+  const hasValidAmount = Number.isFinite(totalAmount) && totalAmount > 0;
 
   // Metrics
   const totalSettled = payments
@@ -53,12 +50,8 @@ export function PaymentsView() {
 
   // Create a real provider checkout. A browser return never marks a payment as paid.
   const handleInitiatePayment = async () => {
-    if (!customerName.trim() || !customerEmail.trim()) {
-      alert('Enter the shipper company name and billing email first.');
-      return;
-    }
-    if (!selectedShipment) {
-      alert('Select a shipment before starting payment.');
+    if (!selectedShipment || !hasValidAmount) {
+      setCheckoutNotice('A valid agreed shipment price is required before checkout can start.');
       return;
     }
     setIsProcessing(true);
@@ -67,9 +60,7 @@ export function PaymentsView() {
       const res = await api.createDodoCheckout({
         shipmentId: selectedShipment.id,
         amount: totalAmount,
-        currency: 'INR',
-        customerName: customerName.trim(),
-        customerEmail: customerEmail.trim(),
+        currency,
       });
       await refresh();
       setCheckoutNotice('Payment session created. Complete payment on Dodo’s secure checkout page. FleetGrid will show PAID only after the provider webhook is verified.');
@@ -93,7 +84,7 @@ export function PaymentsView() {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold tracking-tight text-ink-50">Dodo Payments Hub</h1>
               <span className="rounded-full border border-healthy/40 bg-healthy/10 px-2.5 py-0.5 font-mono text-2xs font-semibold text-healthy">
-                Production Gateway
+                Provider Checkout
               </span>
             </div>
             <p className="mt-0.5 text-xs text-ink-400">
@@ -189,81 +180,44 @@ export function PaymentsView() {
                       </div>
                       <div>
                         <div className="text-ink-500">ASSIGNED TRUCK</div>
-                        <div className="mt-0.5 font-semibold text-accent">{selectedShipment.truckId || 'FG-027'}</div>
+                        <div className="mt-0.5 font-semibold text-accent">{selectedShipment.truckId || 'Not assigned'}</div>
                       </div>
                     </div>
                   </div>
                 )}
-
-                {/* Customer Details */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="block font-mono text-2xs font-semibold uppercase tracking-wider text-ink-400">
-                      Shipper Company
-                    </label>
-                    <input
-                      type="text"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      className="mt-1 w-full rounded-md border border-base-600 bg-base-900 px-3 py-2 text-xs text-ink-100 focus:border-accent focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-mono text-2xs font-semibold uppercase tracking-wider text-ink-400">
-                      Billing Email
-                    </label>
-                    <input
-                      type="email"
-                      value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
-                      className="mt-1 w-full rounded-md border border-base-600 bg-base-900 px-3 py-2 text-xs text-ink-100 focus:border-accent focus:outline-none"
-                    />
-                  </div>
-                </div>
 
                 <div className="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-ink-300">
                   <div className="font-semibold text-ink-100">Payment provider: Dodo Payments</div>
                   <p className="mt-1 text-ink-400">UPI, cards and other supported methods are presented by Dodo on its secure checkout page. FleetGrid does not collect card or UPI credentials.</p>
                 </div>
 
-                {/* Itemized Cost Breakdown */}
+                {/* Display the shipment's stored agreed amount; no invented fee/tax estimates. */}
                 <div className="rounded-lg border border-base-700 bg-base-900 p-4 font-mono text-xs">
                   <div className="text-2xs font-semibold uppercase tracking-wider text-ink-400">
-                    Itemized Cost Breakdown
+                    Agreed Shipment Amount
                   </div>
-                  <div className="mt-2.5 space-y-1.5 divide-y divide-base-800">
-                    <div className="flex justify-between text-ink-300">
-                      <span>Line-Haul Freight (Base)</span>
-                      <span>₹{baseRate.toLocaleString('en-IN')}</span>
-                    </div>
-                    <div className="flex justify-between pt-1.5 text-ink-300">
-                      <span>FASTag Electronic Tollway Surcharge</span>
-                      <span>₹{tollSurcharge.toLocaleString('en-IN')}</span>
-                    </div>
-                    <div className="flex justify-between pt-1.5 text-ink-300">
-                      <span>FleetGrid Escrow Protection Fee</span>
-                      <span>₹{platformEscrowFee.toLocaleString('en-IN')}</span>
-                    </div>
-                    <div className="flex justify-between pt-1.5 text-ink-300">
-                      <span>Integrated GST (18%)</span>
-                      <span>₹{gst.toLocaleString('en-IN')}</span>
-                    </div>
-                    <div className="flex justify-between pt-2 text-sm font-bold text-ink-50">
-                      <span>Total Amount Payable</span>
-                      <span className="text-healthy">₹{totalAmount.toLocaleString('en-IN')}</span>
-                    </div>
+                  <div className="mt-3 flex items-center justify-between text-sm font-bold text-ink-50">
+                    <span>Shipment price</span>
+                    <span className="text-healthy">
+                      {hasValidAmount
+                        ? new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)
+                        : 'Price not set'}
+                    </span>
                   </div>
+                  <p className="mt-2 text-[10px] leading-relaxed text-ink-500">
+                    This is the price recorded on the shipment. Any taxes or additional charges must be agreed and recorded before checkout.
+                  </p>
                 </div>
 
                 {/* Primary CTA */}
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    disabled={isProcessing}
+                    disabled={isProcessing || !selectedShipment || !hasValidAmount}
                     onClick={handleInitiatePayment}
                     className="flex-1 rounded-lg bg-healthy px-4 py-3 font-mono text-xs font-bold tracking-wider text-base-950 uppercase shadow-md transition-all hover:bg-healthy/90 active:scale-[0.99] disabled:opacity-50"
                   >
-                    {isProcessing ? 'Connecting to Dodo Payments…' : `Pay ₹${totalAmount.toLocaleString('en-IN')} via Dodo`}
+                    {isProcessing ? 'Connecting to Dodo Payments…' : hasValidAmount ? `Pay ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)} via Dodo` : 'Shipment price required'}
                   </button>
                 </div>
               </div>
