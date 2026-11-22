@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { AppHeader } from '../components/AppHeader';
 import { Panel } from '../components/Panel';
 import { Metric } from '../components/Primitives';
@@ -11,23 +11,24 @@ export function PaymentsView() {
   const { snapshot, refresh, session } = useFleet();
   const { shipments, payments = [] } = snapshot;
 
-  // Selected shipment for payment
-  const unconfirmedShipments = useMemo(
-    () => shipments.filter((s: Shipment) => s.status === 'CAPACITY_RESERVED' || s.status === 'DRAFT'),
+  // Payment is collected only after the driver accepts the shipment.
+  const payableShipments = useMemo(
+    () => shipments.filter((s: Shipment) => s.status === 'CONFIRMED'),
     [shipments],
   );
-
-  const [selectedShipmentId, setSelectedShipmentId] = useState<string>(
-    unconfirmedShipments[0]?.id || shipments[0]?.id || '',
-  );
-
-  const selectedShipment = shipments.find((s: Shipment) => s.id === selectedShipmentId) || shipments[0] || null;
+  const [selectedShipmentId, setSelectedShipmentId] = useState<string>('');
+  useEffect(() => {
+    if (!payableShipments.some((s) => s.id === selectedShipmentId) && payableShipments[0]) {
+      setSelectedShipmentId(payableShipments[0].id);
+    }
+  }, [payableShipments, selectedShipmentId]);
+  const selectedShipment = payableShipments.find((s: Shipment) => s.id === selectedShipmentId) || null;
 
   // Form states
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Payment | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState('');
-  const [filter, setFilter] = useState<'ALL' | 'PAID' | 'PENDING'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'FAILED'>('ALL');
 
   // Use only the price and currency stored on the selected shipment.
   // Do not invent tolls, platform fees, taxes, or a fallback freight price.
@@ -37,8 +38,9 @@ export function PaymentsView() {
 
   // Metrics
   const totalSettled = payments
-    .filter((p: Payment) => p.status === 'PAID')
+    .filter((p: Payment) => p.status === 'PAID' && p.currency === currency)
     .reduce((acc: number, p: Payment) => acc + p.amount, 0);
+  const formatMoney = (amount: number, code: string) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: code }).format(amount);
 
   const pendingCount = payments.filter((p: Payment) => p.status === 'PENDING').length;
   const paidCount = payments.filter((p: Payment) => p.status === 'PAID').length;
@@ -98,17 +100,17 @@ export function PaymentsView() {
                 <rect x="2" y="5" width="20" height="14" rx="2" />
                 <line x1="2" y1="10" x2="22" y2="10" />
               </svg>
-              Provider: Dodo Payments (INR / USD)
+              Provider: Dodo Payments
             </span>
           </div>
         </div>
 
         {/* Top Operational Metrics */}
         <div className="panel grid grid-cols-2 divide-x divide-base-600 sm:grid-cols-4">
-          <Metric label="Total Paid" value={`₹${totalSettled.toLocaleString('en-IN')}`} tone="healthy" hint="Provider-confirmed payments" />
+          <Metric label={`Total Paid (${currency})`} value={formatMoney(totalSettled, currency)} tone="healthy" hint="Provider-confirmed payments in this currency" />
           <Metric label="Paid Invoices" value={paidCount} tone="accent" hint="Provider-confirmed receipts" />
           <Metric label="Awaiting Payment" value={pendingCount} tone="warn" hint="Active reservations" />
-          <Metric label="Escrow SLA" value="Webhook" tone="neutral" hint="Provider confirmation required" />
+          <Metric label="Confirmation" value="Verified" tone="neutral" hint="Signed provider webhook" />
         </div>
 
         {/* Workspace: Checkout & Payment Terminal */}
@@ -135,12 +137,13 @@ export function PaymentsView() {
                     onChange={(e) => setSelectedShipmentId(e.target.value)}
                     className="mt-1.5 w-full rounded-md border border-base-600 bg-base-900 px-3.5 py-2.5 text-xs font-mono text-ink-100 focus:border-accent focus:outline-none"
                   >
-                    {shipments.map((s: Shipment) => (
+                    {payableShipments.map((s: Shipment) => (
                       <option key={s.id} value={s.id}>
                         {s.id} — {s.cargoName} ({s.origin} → {s.destination}, {s.weightT}T) — [Status: {s.status}]
                       </option>
                     ))}
                   </select>
+                  {payableShipments.length === 0 && <p className="mt-2 text-2xs text-warn">No driver-confirmed shipment is ready for payment yet. Payment becomes available after the assigned driver accepts a shipment.</p>}
                 </div>
 
                 {/* Shipment Summary Card */}
@@ -188,7 +191,7 @@ export function PaymentsView() {
 
                 <div className="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-ink-300">
                   <div className="font-semibold text-ink-100">Payment provider: Dodo Payments</div>
-                  <p className="mt-1 text-ink-400">UPI, cards and other supported methods are presented by Dodo on its secure checkout page. FleetGrid does not collect card or UPI credentials.</p>
+                  <p className="mt-1 text-ink-400">Available payment methods depend on your Dodo merchant configuration and the customer’s location. FleetGrid never collects card or bank credentials.</p>
                 </div>
 
                 {/* Display the shipment's stored agreed amount; no invented fee/tax estimates. */}
@@ -200,7 +203,7 @@ export function PaymentsView() {
                     <span>Shipment price</span>
                     <span className="text-healthy">
                       {hasValidAmount
-                        ? new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)
+                        ? formatMoney(totalAmount, currency)
                         : 'Price not set'}
                     </span>
                   </div>
@@ -231,7 +234,7 @@ export function PaymentsView() {
               title="Settled Transactions"
               actions={
                 <div className="flex items-center gap-1 rounded bg-base-850 p-0.5 font-mono text-3xs">
-                  {(['ALL', 'PAID', 'PENDING'] as const).map((tab) => (
+                  {(['ALL', 'PAID', 'PENDING', 'FAILED'] as const).map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -263,7 +266,7 @@ export function PaymentsView() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-mono text-xs font-bold text-ink-100">
-                              ₹{p.amount.toLocaleString('en-IN')}
+                              {formatMoney(p.amount, p.currency)}
                             </span>
                             <span
                               className={cn(
@@ -292,7 +295,7 @@ export function PaymentsView() {
                             onClick={() => setActiveReceipt(p)}
                             className="rounded border border-base-600 bg-base-800 px-2 py-1 font-mono text-3xs font-semibold uppercase tracking-wider text-accent transition-colors hover:bg-base-700"
                           >
-                            Receipt ↗
+                            Details ↗
                           </button>
                           <div className="mt-1 font-mono text-[10px] text-ink-500">
                             {formatTime(p.createdAt)}
@@ -323,7 +326,7 @@ export function PaymentsView() {
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-healthy text-base-950 text-xs font-bold">
                   ✓
                 </span>
-                <h3 className="font-mono text-sm font-bold text-ink-50">Official Payment Receipt</h3>
+                <h3 className="font-mono text-sm font-bold text-ink-50">FleetGrid Payment Record</h3>
               </div>
               <button
                 type="button"
@@ -339,7 +342,7 @@ export function PaymentsView() {
                 <div className="flex items-center justify-between">
                   <span className="text-2xs uppercase text-ink-400">Total Settled</span>
                   <span className="text-lg font-bold text-healthy">
-                    ₹{activeReceipt.amount.toLocaleString('en-IN')} {activeReceipt.currency}
+                    {formatMoney(activeReceipt.amount, activeReceipt.currency)}
                   </span>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-2xs">
@@ -356,7 +359,7 @@ export function PaymentsView() {
                     <div className="font-semibold text-healthy">{activeReceipt.status}</div>
                   </div>
                   <div>
-                    <span className="text-ink-500">SETTLED AT</span>
+                    <span className="text-ink-500">{activeReceipt.status === 'PAID' ? 'SETTLED AT' : 'LAST UPDATED'}</span>
                     <div className="font-semibold text-ink-200">{formatTime(activeReceipt.updatedAt)}</div>
                   </div>
                   <div>
@@ -371,7 +374,7 @@ export function PaymentsView() {
               </div>
 
               <div className="rounded border border-healthy/30 bg-healthy/5 p-3 text-2xs text-healthy">
-                This receipt is available only for a payment confirmed by the payment provider.
+                {activeReceipt.status === 'PAID' ? 'Payment confirmed by Dodo’s signed webhook. This is FleetGrid’s payment record; use the provider invoice for the official tax invoice.' : 'This payment is not settled. Do not treat this record as proof of payment.'}
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
