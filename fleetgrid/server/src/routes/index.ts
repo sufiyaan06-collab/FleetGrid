@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authRouter } from './auth.js';
 import { requireAuthenticated } from '../middleware/auth.js';
+import { requireTrustedOrigin } from '../middleware/trustedOrigin.js';
 import { capacityRouter } from './capacity.js';
 import { demoRouter } from './demo.js';
 import { driverRouter } from './driver.js';
@@ -22,7 +23,8 @@ export function buildRouter(): Router {
   // Payment router has its own auth guard, except for its signature-verified
   // Dodo webhook, which must accept provider callbacks without a user cookie.
   router.use(paymentsRouter);
-  // Every other operational API requires an authenticated user session.
+  // Every other operational API requires a trusted browser origin and an authenticated user session.
+  router.use(requireTrustedOrigin);
   router.use(requireAuthenticated);
   router.use(miscRouter);
   router.use(trucksRouter);
