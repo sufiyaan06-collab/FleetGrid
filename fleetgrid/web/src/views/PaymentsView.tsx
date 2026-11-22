@@ -384,7 +384,7 @@ export function PaymentsView() {
                   </div>
                   <div>
                     <span className="text-ink-500">STATUS</span>
-                    <div className="font-semibold text-healthy">{activeReceipt.status}</div>
+                    <div className={cn('font-semibold', activeReceipt.status === 'PAID' ? 'text-healthy' : 'text-warn')}>{activeReceipt.status}</div>
                   </div>
                   <div>
                     <span className="text-ink-500">{activeReceipt.status === 'PAID' ? 'SETTLED AT' : 'LAST UPDATED'}</span>
@@ -401,7 +401,7 @@ export function PaymentsView() {
                 </div>
               </div>
 
-              <div className="rounded border border-healthy/30 bg-healthy/5 p-3 text-2xs text-healthy">
+              <div className={cn('rounded border p-3 text-2xs', activeReceipt.status === 'PAID' ? 'border-healthy/30 bg-healthy/5 text-healthy' : 'border-warn/30 bg-warn/5 text-warn')}>
                 {activeReceipt.status === 'PAID' ? 'Payment confirmed by Dodo’s signed webhook. This is FleetGrid’s payment record; use the provider invoice for the official tax invoice.' : 'This payment is not settled. Do not treat this record as proof of payment.'}
               </div>
 
