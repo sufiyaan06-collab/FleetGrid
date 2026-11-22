@@ -42,7 +42,7 @@ This keeps valid organizations, users, drivers, trucks and offers usable by the 
 | Incident recoveryPlanId and updatedAt | Nullable; resolve recovery-plan links from actual rows only. |
 | Recovery Plan affectedShipmentIds and options | Strictly parse serialized JSON and validate shape/referenced IDs. Invalid JSON or shape quarantines the row; never replace with empty arrays. |
 | Recovery Plan updatedAt | Nullable. |
-| Payment updatedAt | Nullable. Preserve provider reference as private data; reconcile provider status before enabling payment actions. |
+| Payment updatedAt | Nullable. Preserve provider reference as private data; quarantine legacy payment rows until provider status is reconciled. A legacy `PAID` value alone is not current settlement proof. |
 | Notification status | Preserve UNREAD, READ, SENT, and PENDING distinctly. Do not collapse read state into delivery state. |
 
 ## 3. Role decisions
@@ -123,3 +123,12 @@ A SQLAlchemy/Python default is not a database NOT NULL constraint. Unless the de
 - **Shipment price:** preserve the actual stored numeric value; null is unknown and zero is not payable. Do not replace null with the ORM default 0.
 
 These rules are subject to confirmation against live information_schema nullability before any staging apply. If deployed metadata contradicts the checked-in ORM assumptions, the deployed schema wins and the decision record must be amended before import.
+
+
+## 10. Importer-specific safety rules
+
+- The read-only importer quarantines every legacy Payment row until provider reconciliation is performed. It never copies provider references into the application-facing Payment record.
+- Invalid non-null timestamps are quarantined rather than silently converted to null.
+- The importer validates the complete reviewed source-column contract and emits the live source nullability/default metadata in its sanitized preview. Any missing reviewed column aborts the preview.
+- A strict route parse failure is a warning: preserve the raw route in the private in-memory audit envelope and map parsed origin/destination as null.
+- A capacity price rule is converted only for the explicit INR-per-ton grammar. Other price rules remain null with a warning.
