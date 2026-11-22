@@ -11,12 +11,13 @@
     "build": "tsc -p tsconfig.json --noEmit false",
     "serve": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx test/auth-security.test.ts && tsx test/flow.test.ts && tsx test/auth-integration.test.ts",
+    "test": "tsx test/auth-security.test.ts && tsx test/flow.test.ts && tsx test/auth-integration.test.ts && tsx test/legacy-importer.test.ts",
     "reset": "node ../scripts/reset.mjs",
     "provision:ops": "tsx scripts/provision-ops.ts",
     "migrate:postgres": "tsx scripts/migrate-json-to-postgres.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
-    "inspect:legacy": "tsx scripts/inspect-legacy-postgres.ts"
+    "inspect:legacy": "tsx scripts/inspect-legacy-postgres.ts",
+    "import:legacy:dry-run": "tsx scripts/import-legacy-postgres.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
