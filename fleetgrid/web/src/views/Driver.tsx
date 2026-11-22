@@ -54,7 +54,7 @@ export function Driver() {
   const assigned = useMemo(
     () =>
       snapshot.shipments
-        .filter((s) => s.truckId === truckId && s.status !== 'DELIVERED')
+        .filter((s) => Boolean(truckId) && s.truckId === truckId && s.status !== 'DELIVERED')
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
     [snapshot.shipments, truckId],
   );
