@@ -140,6 +140,9 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    // Preserve the verification-link route while restoring an absent session.
+    // The Login screen consumes the query token only after explicit user action.
+    const hasVerificationToken = new URLSearchParams(window.location.search).has('token');
     void api.me().then((account) => {
       if (!active) return;
       const nextMode = account.user.role === 'BUSINESS'
@@ -166,7 +169,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     }).catch(() => {
       // No valid credential session: never reopen a stale locally remembered role.
       if (!active) return;
-      setModeState('LANDING');
+      setModeState(hasVerificationToken ? 'LOGIN' : 'LANDING');
       setSession(null);
       try {
         window.localStorage.removeItem(MODE_STORAGE_KEY);
