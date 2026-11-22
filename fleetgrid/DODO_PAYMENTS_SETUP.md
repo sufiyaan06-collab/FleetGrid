@@ -32,12 +32,13 @@ Never expose the API key or webhook signing key in frontend variables (such as `
 
 ## Safe activation sequence
 
-1. Configure the Dodo dashboard product and webhook.
-2. Add the test-mode values above to the Render server environment.
-3. Deploy the payment integration to a safe test target only after the production database transition and deployment plan are approved. Do not connect the new Node app to the legacy database before migration.
-4. Send a Dodo test event and verify the signature is accepted. Complete a test checkout using a confirmed test shipment.
-5. Confirm that the webhook updates the exact FleetGrid payment to `PAID`, with matching currency and amount (excluding separately reported tax), and that duplicate webhook deliveries do not create duplicate settlements.
-6. Only then set `DODO_PAYMENTS_WEBHOOK_ENABLED=true` and test another checkout. The readiness endpoint reports configuration presence, not proof that Dodo has delivered a successful test event.
+1. Configure the Dodo test-mode product and signed webhook endpoint.
+2. Add the test-mode values above to the Render server environment, keeping `DODO_PAYMENTS_WEBHOOK_ENABLED=false`.
+3. Deploy the payment integration only after the production database transition and deployment plan are approved. Do not connect the new Node app to the legacy database before migration.
+4. Send a signed Dodo test webhook event and verify that the endpoint accepts its signature. This validates the webhook secret without opening checkout.
+5. After that signature check succeeds, set `DODO_PAYMENTS_WEBHOOK_ENABLED=true` in test mode. This enables test checkout creation; it does not enable live charges.
+6. Complete a Dodo test checkout using a driver-confirmed test shipment. Verify that the webhook updates the matching FleetGrid payment to `PAID`, with matching currency and amount (excluding separately reported tax), and that duplicate webhook deliveries do not create duplicate settlements.
+7. The readiness endpoint reports configuration presence, not proof that Dodo has delivered a successful test event. Keep all live settings disabled until the owner explicitly approves live charges.
 
 ## Live payments
 
