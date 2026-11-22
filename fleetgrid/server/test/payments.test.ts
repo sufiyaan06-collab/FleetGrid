@@ -8,6 +8,6 @@ assert.equal(toDodoMinorUnits(1.234, 'KWD'), 1234, 'three-decimal currencies con
 assert.throws(() => toDodoMinorUnits(0, 'INR'), /positive finite number/);
 assert.throws(() => toDodoMinorUnits(-1, 'INR'), /positive finite number/);
 assert.throws(() => toDodoMinorUnits(10.001, 'INR'), /unsupported precision/);
-assert.throws(() => toDodoMinorUnits(1, 'NOT'), /supported|ISO 4217/);
+assert.throws(() => toDodoMinorUnits(1, 'INVALID'), /supported|ISO 4217/);
 
 console.log('Dodo payment amount conversion checks passed.');
