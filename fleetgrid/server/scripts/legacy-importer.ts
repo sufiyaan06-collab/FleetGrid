@@ -114,12 +114,18 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       const role=typeof row.role==='string'?roleMap[row.role]:undefined;
       if(!role) issue(issues,row.role==='AUDITOR'?'ROLE_REQUIRES_ADMIN_REVIEW':'UNKNOWN_OR_NULL_ROLE','error','role');
       const organizationId=relationship(row.organization_id,orgs,'organizationId',false);
+      const linkedOrg=orgs.find(org=>org.id===organizationId);
+      if(organizationId && linkedOrg && ((role==='BUSINESS' && linkedOrg.type!=='SHIPPER') || (role!=='BUSINESS' && linkedOrg.type!=='FLEET_OPERATOR'))) {
+        issue(issues,'USER_ORGANIZATION_ROLE_MISMATCH','error','organization_id');
+      }
       return mapped(COLLECTION[table],{id,name:required(row.name,'name'),role,organizationId,contact:str(row.contact),createdAt:iso(row.created_at)});
     }
     case 'drivers': {
       const userId=relationship(row.user_id,users,'userId',true);
       relationship(row.organization_id,orgs,'organizationId',true);
       const user=users.find(u=>u.id===userId);
+      if(user && user.role!=='DRIVER') issue(issues,'DRIVER_LINKED_USER_ROLE_MISMATCH','error','user_id');
+      if(user && str(user.organization_id) && str(user.organization_id)!==str(row.organization_id)) issue(issues,'DRIVER_USER_ORGANIZATION_MISMATCH','error','organization_id');
       const statusMap: Record<string,string>={AVAILABLE:'AVAILABLE',ON_TRIP:'ON_JOURNEY',ON_JOURNEY:'ON_JOURNEY',OFF_DUTY:'OFF_DUTY',INCIDENT_REPORTED:'INCIDENT_REPORTED'};
       const status=typeof row.status==='string'?statusMap[row.status]:undefined;
       if(!status) issue(issues,'UNKNOWN_OR_NULL_DRIVER_STATUS','error','status');
