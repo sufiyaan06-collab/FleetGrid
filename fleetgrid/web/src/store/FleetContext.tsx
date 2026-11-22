@@ -187,6 +187,22 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
   const setMode = useCallback(
     async (next: Mode) => {
+      // Production operational workspaces always require a real account session.
+      // Keep demo role entry available only in local development.
+      if (
+        !session &&
+        import.meta.env.PROD &&
+        ['CONTROL_TOWER', 'BUSINESS', 'DRIVER', 'PAYMENTS'].includes(next)
+      ) {
+        setModeState('LOGIN');
+        try {
+          window.localStorage.setItem(MODE_STORAGE_KEY, 'LOGIN');
+        } catch {
+          /* private mode: ignore */
+        }
+        return;
+      }
+
       setModeState(next);
       // Harmless UI preference only — never fleet data.
       try {
