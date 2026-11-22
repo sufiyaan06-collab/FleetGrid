@@ -5,7 +5,33 @@ import { newId, nowIso } from '../lib/ids.js';
 import { runExclusive } from '../lib/mutex.js';
 import { recordEvent } from './events.js';
 import { hub } from './realtime.js';
+import { isProductionEnvironment } from '../config.js';
 import type { Payment, Shipment } from '../types.js';
+
+/**
+ * Dodo expects the currency's smallest denomination (paise for INR, cents for USD).
+ * FleetGrid stores shipment prices in major currency units.
+ */
+export function toDodoMinorUnits(amount: number, currency: string): number {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw ApiError.badRequest('The shipment amount must be a positive finite number.');
+  }
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    throw ApiError.badRequest('The shipment currency must be a valid uppercase ISO 4217 code.');
+  }
+  let fractionDigits: number;
+  try {
+    fractionDigits = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits;
+  } catch {
+    throw ApiError.badRequest('The shipment currency is not supported for payment processing.');
+  }
+  const factor = 10 ** fractionDigits;
+  const minorUnits = Math.round((amount + Number.EPSILON) * factor);
+  if (!Number.isSafeInteger(minorUnits) || minorUnits <= 0 || Math.abs(amount * factor - minorUnits) > 0.000001) {
+    throw ApiError.badRequest('The shipment amount has unsupported precision for the selected currency.');
+  }
+  return minorUnits;
+}
 
 export interface CreateDodoCheckoutInput {
   shipmentId?: string | null;
@@ -50,7 +76,8 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
 
     const paymentId = newId('pay');
     const currency = input.currency || 'INR';
-    const amount = Math.round(input.amount);
+    const amount = input.amount;
+    const amountMinor = toDodoMinorUnits(amount, currency);
     const apiKey = process.env.DODO_PAYMENTS_API_KEY;
     const productId = process.env.DODO_PRODUCT_ID?.trim();
     const environment = process.env.DODO_ENVIRONMENT || 'test_mode';
@@ -75,6 +102,9 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
     if (environment !== 'test_mode' && environment !== 'live_mode') {
       throw ApiError.badRequest('DODO_ENVIRONMENT must be test_mode or live_mode.');
     }
+    if (environment === 'live_mode' && process.env.DODO_LIVE_PAYMENTS_ENABLED !== 'true') {
+      throw ApiError.notImplemented('Live payments remain disabled until explicitly approved and test-mode verification is complete.');
+    }
     if (!input.customerEmail || !input.customerName) {
       throw ApiError.badRequest('A real customer name and billing email are required to create a payment session.');
     }
@@ -91,14 +121,26 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
           {
             product_id: productId,
             quantity: 1,
-            amount: amount * 100,
+            amount: amountMinor,
           },
         ],
+        metadata: {
+          fleetgrid_payment_id: paymentId,
+          fleetgrid_shipment_id: shipment?.id ?? '',
+        },
         return_url: (() => {
-          const frontendBase = process.env.APP_BASE_URL || process.env.FRONTEND_ORIGIN || (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:5173');
+          const frontendBase = process.env.APP_BASE_URL || process.env.FRONTEND_ORIGIN || (!isProductionEnvironment() ? 'http://localhost:5173' : '');
           if (!frontendBase) throw ApiError.notImplemented('Set APP_BASE_URL to the public FleetGrid frontend before enabling Dodo checkout.');
           const url = new URL('/', frontendBase);
           url.searchParams.set('payment', 'return');
+          url.searchParams.set('id', paymentId);
+          return url.toString();
+        })(),
+        cancel_url: (() => {
+          const frontendBase = process.env.APP_BASE_URL || process.env.FRONTEND_ORIGIN || (!isProductionEnvironment() ? 'http://localhost:5173' : '');
+          if (!frontendBase) throw ApiError.notImplemented('Set APP_BASE_URL to the public FleetGrid frontend before enabling Dodo checkout.');
+          const url = new URL('/', frontendBase);
+          url.searchParams.set('payment', 'cancelled');
           url.searchParams.set('id', paymentId);
           return url.toString();
         })(),
@@ -108,7 +150,7 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
         },
       });
     } catch (err) {
-      console.error('[DodoPayments] Checkout session creation failed:', err);
+      console.error('[DodoPayments] Checkout session creation failed:', err instanceof Error ? err.message : 'Unknown provider error');
       throw ApiError.notImplemented(
         'Dodo Payments could not create a checkout session. Check the API key, product configuration, and Dodo account mode, then try again.',
       );
