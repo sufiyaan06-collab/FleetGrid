@@ -54,10 +54,11 @@ const has = (rows: LegacyRow[], id: unknown) => typeof id === 'string' && rows.s
 function issue(issues: MigrationIssue[], code: string, severity: 'warning'|'error'='error', field?: string) {
   issues.push({ code, severity, ...(field ? {field} : {}) });
 }
-function parseJson(value: unknown): unknown | null {
-  if (value == null) return null;
-  if (typeof value !== 'string') return value;
-  try { return JSON.parse(value) as unknown; } catch { return null; }
+function parseJson(value: unknown): { ok: boolean; value: unknown | null } {
+  if (value == null) return { ok: true, value: null };
+  if (typeof value !== 'string') return { ok: true, value };
+  try { return { ok: true, value: JSON.parse(value) as unknown }; }
+  catch { return { ok: false, value: null }; }
 }
 function parseRoute(value: unknown): {origin:string;destination:string}|null {
   const route = str(value);
@@ -138,7 +139,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
     case 'capacity_offers': {
       relationship(row.truck_id,trucks,'truckId',true);
       const route=parseRoute(row.route);
-      if(!route) issue(issues,'ROUTE_NOT_PARSEABLE','error','route');
+      if(!route) issue(issues,'ROUTE_NOT_PARSEABLE','warning','route');
       const statusMap:Record<string,string>={OPEN:'OPEN',RESERVED:'HELD',HELD:'HELD',CLOSED:'CLOSED'};
       const status=typeof row.status==='string'?statusMap[row.status]:undefined;
       if(!status) issue(issues,'UNKNOWN_OR_NULL_CAPACITY_STATUS','error','status');
@@ -157,17 +158,20 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       if(weightT===null) issue(issues,'INVALID_WEIGHT','error','weight_t');
       if(price===null) issue(issues,'PRICE_UNKNOWN_NOT_PAYABLE','warning','price');
       const currency=str(row.currency);
+      if(!currency) issue(issues,'SHIPMENT_CURRENCY_UNKNOWN_NOT_PAYABLE','warning','currency');
+      if(price===0) issue(issues,'ZERO_PRICE_NOT_PAYABLE','warning','price');
       return mapped(COLLECTION[table],{id,reference:null,cargoName:null,shipperId:str(row.shipper_id),origin:required(row.origin,'origin'),destination:required(row.destination,'destination'),weightT,deadlineAt:iso(row.deadline_at),status,truckId,capacityOfferId:null,price,currency,createdAt:iso(row.created_at),updatedAt:null});
     }
     case 'shipment_events': {
       relationship(row.shipment_id,shipments,'shipmentId',true);
-      const payload=parseJson(row.payload_json);
-      if(payload===null || typeof payload!=='object' || Array.isArray(payload)) issue(issues,'EVENT_PAYLOAD_NOT_JSON_OBJECT','error','payload_json');
-      const actor=typeof row.actor_type==='string'?actorMap[row.actor_type]:undefined;
-      if(!actor) issue(issues,'UNKNOWN_OR_NULL_EVENT_ACTOR','error','actor_type');
-      const proof=enumSet(row.proof_status,['PENDING','CONFIRMED','FAILED','FALLBACK_RECORDED'] as const);
-      if(!proof) issue(issues,'UNKNOWN_OR_NULL_PROOF_STATUS','error','proof_status');
-      return mapped(COLLECTION[table],{id,shipmentId:str(row.shipment_id),incidentId:null,truckId:null,eventType:required(row.event_type,'event_type'),payload,actorType:actor,actorId:str(row.actor_id),timestamp:iso(row.timestamp),hash:required(row.hash,'hash'),blockchainTx:str(row.blockchain_tx),proofStatus:proof});
+      const parsedPayload=parseJson(row.payload_json);
+      const payload=parsedPayload.value;
+      if(!parsedPayload.ok || payload===null || typeof payload!=='object' || Array.isArray(payload)) issue(issues,'EVENT_PAYLOAD_NOT_JSON_OBJECT','error','payload_json');
+      const actor= row.actor_type==null ? null : (typeof row.actor_type==='string'?actorMap[row.actor_type]:undefined);
+      if(row.actor_type!=null && !actor) issue(issues,'UNKNOWN_EVENT_ACTOR','error','actor_type');
+      const proof=row.proof_status==null ? null : enumSet(row.proof_status,['PENDING','CONFIRMED','FAILED','FALLBACK_RECORDED'] as const);
+      if(row.proof_status!=null && !proof) issue(issues,'UNKNOWN_PROOF_STATUS','error','proof_status');
+      return mapped(COLLECTION[table],{id,shipmentId:str(row.shipment_id),incidentId:null,truckId:null,eventType:required(row.event_type,'event_type'),payload,actorType:actor??null,actorId:str(row.actor_id),timestamp:iso(row.timestamp),hash:required(row.hash,'hash'),blockchainTx:str(row.blockchain_tx),proofStatus:proof??null});
     }
     case 'incidents': {
       relationship(row.truck_id,trucks,'truckId',true);
@@ -180,14 +184,21 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
     }
     case 'recovery_plans': {
       relationship(row.incident_id,incidents,'incidentId',true);
-      const affected=parseJson(row.affected_shipment_ids);
-      const options=parseJson(row.options_json);
+      const affectedParsed=parseJson(row.affected_shipment_ids);
+      const optionsParsed=parseJson(row.options_json);
+      const affected=affectedParsed.value, options=optionsParsed.value;
+      if(!affectedParsed.ok) issue(issues,'MALFORMED_AFFECTED_SHIPMENT_IDS','error','affected_shipment_ids');
+      if(!optionsParsed.ok) issue(issues,'MALFORMED_RECOVERY_OPTIONS','error','options_json');
       if(affected!==null && (!Array.isArray(affected)||!affected.every(v=>typeof v==='string'))) issue(issues,'INVALID_AFFECTED_SHIPMENT_IDS','error','affected_shipment_ids');
-      if(options!==null && !Array.isArray(options)) issue(issues,'INVALID_RECOVERY_OPTIONS','error','options_json');
+      if(options!==null && (!Array.isArray(options))) issue(issues,'INVALID_RECOVERY_OPTIONS','error','options_json');
       if(Array.isArray(affected)) for(const sid of affected) if(!has(shipments,sid)) issue(issues,'RECOVERY_OPTION_SHIPMENT_NOT_FOUND','error','affected_shipment_ids');
       if(Array.isArray(options)) for(const option of options) {
-        if(!option || typeof option!=='object' || Array.isArray(option) || typeof (option as Record<string,unknown>).truckId!=='string') { issue(issues,'INVALID_RECOVERY_OPTION_SHAPE','error','options_json'); continue; }
-        if(!has(trucks,(option as Record<string,unknown>).truckId)) issue(issues,'RECOVERY_OPTION_TRUCK_NOT_FOUND','error','options_json');
+        if(!option || typeof option!=='object' || Array.isArray(option)) { issue(issues,'INVALID_RECOVERY_OPTION_SHAPE','error','options_json'); continue; }
+        const o=option as Record<string,unknown>;
+        if(typeof o.truckId!=='string' || num(o.availableT)===null || num(o.etaMinutes)===null || num(o.distanceKm)===null || num(o.cost)===null || typeof o.currency!=='string' || typeof o.compatible!=='boolean' || typeof o.reason!=='string') {
+          issue(issues,'INVALID_RECOVERY_OPTION_SHAPE','error','options_json'); continue;
+        }
+        if(!has(trucks,o.truckId)) issue(issues,'RECOVERY_OPTION_TRUCK_NOT_FOUND','error','options_json');
       }
       const selectedTruckId=relationship(row.selected_truck_id,trucks,'selectedTruckId');
       const status=enumSet(row.status,RECOVERY_STATUS);
@@ -204,7 +215,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       if(amount===null) issue(issues,'INVALID_PAYMENT_AMOUNT','error','amount');
       const currency=str(row.currency), provider=str(row.provider);
       if(!currency||!provider) issue(issues,'PAYMENT_NEEDS_PROVIDER_RECONCILIATION','warning');
-      return mapped(COLLECTION[table],{id,shipmentId,recoveryPlanId,provider,amount,currency,status,providerReference:str(row.provider_reference),createdAt:iso(row.created_at),updatedAt:null});
+      return mapped(COLLECTION[table],{id,shipmentId,recoveryPlanId,provider,amount,currency,status,providerReference:null,createdAt:iso(row.created_at),updatedAt:null});
     }
     case 'notifications': {
       const status=enumSet(row.status,['UNREAD','READ','SENT'] as const);
@@ -218,6 +229,20 @@ export function mapLegacySnapshot(input: LegacyTables): MigrationReport {
   const all: LegacyTables = Object.fromEntries(TABLES.map(t=>[t,input[t]??[]]));
   const records: MigrationRecord[]=[];
   for(const table of TABLES) {
+    const ids=new Set<string>();
+    const duplicateIds=new Set<string>();
+    for(const row of all[table]) {
+      const rowId=str(row.id);
+      if(rowId && ids.has(rowId)) duplicateIds.add(rowId);
+      if(rowId) ids.add(rowId);
+    }
+    if(duplicateIds.size) {
+      for(const row of all[table]) if(duplicateIds.has(str(row.id)??'')) records.push({
+        sourceTable:table,sourceId:str(row.id)??'<missing-id>',collection:null,outcome:'quarantined',data:null,
+        issues:[{code:'DUPLICATE_SOURCE_PRIMARY_KEY',field:'id',severity:'error'}],sourceRow:row,
+      });
+      all[table]=all[table].filter(row=>!duplicateIds.has(str(row.id)??''));
+    }
     for(const column of requiredColumns[table]) {
       const rows=all[table];
       if(rows.length && rows.some(row=>!(column in row))) {
