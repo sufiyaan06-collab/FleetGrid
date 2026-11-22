@@ -18,6 +18,7 @@ const MODES: Array<{ id: Mode; label: string; short: string }> = [
   { id: 'CONTROL_TOWER', label: 'Control Tower', short: 'Tower' },
   { id: 'LIVE_MAP', label: 'Live GPS Map', short: 'Live Map' },
   { id: 'BUSINESS', label: 'Business', short: 'Business' },
+  { id: 'PAYMENTS', label: 'Payments Hub', short: 'Payments' },
   { id: 'DRIVER', label: 'Driver', short: 'Driver' },
 ];
 
@@ -35,8 +36,8 @@ export function AppHeader({ children }: AppHeaderProps) {
     : session.user.role === 'DRIVER'
       ? MODES.filter((item) => ['LANDING', 'DRIVER', 'LIVE_MAP'].includes(item.id))
       : session.user.role === 'BUSINESS'
-        ? MODES.filter((item) => ['LANDING', 'BUSINESS', 'LIVE_MAP'].includes(item.id))
-        : MODES.filter((item) => ['LANDING', 'CONTROL_TOWER', 'LIVE_MAP'].includes(item.id));
+        ? MODES.filter((item) => ['LANDING', 'BUSINESS', 'PAYMENTS', 'LIVE_MAP'].includes(item.id))
+        : MODES.filter((item) => ['LANDING', 'CONTROL_TOWER', 'PAYMENTS', 'LIVE_MAP'].includes(item.id));
 
   return (
     <header className="sticky top-0 z-30 border-b border-base-600 bg-base-950/90 backdrop-blur-md">
