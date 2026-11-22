@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { isProductionEnvironment } from '../config.js';
 import { z } from 'zod';
 import { db } from '../store/db.js';
 import { ApiError } from '../lib/errors.js';
@@ -61,7 +62,7 @@ authRouter.post(
   '/auth/demo-login',
   validateBody(demoLoginSchema),
   asyncHandler(async (req, res) => {
-    if (process.env.NODE_ENV === 'production') {
+    if (isProductionEnvironment()) {
       throw new AuthApiError(403, 'DEMO_LOGIN_DISABLED', 'Demo role login is disabled in production. Sign in with your verified account.');
     }
     const { role } = req.body as { role: Role };
@@ -122,7 +123,7 @@ authRouter.post(
   '/auth/register',
   validateBody(registerSchema),
   asyncHandler(async (req, res) => {
-    if (process.env.NODE_ENV === 'production') {
+    if (isProductionEnvironment()) {
       throw new AuthApiError(403, 'DEMO_REGISTRATION_DISABLED', 'Use verified email signup to create a FleetGrid account.');
     }
     const body = req.body as z.infer<typeof registerSchema>;
