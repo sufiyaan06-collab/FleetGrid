@@ -227,6 +227,8 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       if(amount===null) issue(issues,'INVALID_PAYMENT_AMOUNT','error','amount');
       const currency=str(row.currency), provider=str(row.provider);
       if(!currency||!provider) issue(issues,'PAYMENT_NEEDS_PROVIDER_RECONCILIATION','warning');
+      // A legacy payment must not appear settled/actionable until reconciled with its provider.
+      issue(issues,'PAYMENT_REQUIRES_PROVIDER_RECONCILIATION','error');
       return mapped(COLLECTION[table],{id,shipmentId,recoveryPlanId,provider,amount,currency,status,providerReference:null,createdAt:timestamp(row.created_at,issues,'created_at'),updatedAt:null});
     }
     case 'notifications': {
