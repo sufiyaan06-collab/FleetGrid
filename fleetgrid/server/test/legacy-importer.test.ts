@@ -11,7 +11,7 @@ const valid = () => ({
     {id:'user-2',name:'Example Driver',email:'driver@example.invalid',role:'DRIVER',organization_id:'org-2',contact:null,created_at:null},
   ],
   drivers: [{id:'driver-1',organization_id:'org-2',user_id:'user-2',assigned_truck_id:null,status:'AVAILABLE'}],
-  trucks: [{id:'truck-1',organization_id:'org-2',registration_no:'KA01AB1234',capacity_t:20,available_t:12,status:'AVAILABLE',lat:null,lng:null,origin:null,destination:null,departure_at:null,driver_id:'driver-1'}],
+  trucks: [{id:'truck-1',organization_id:'org-2',registration_no:'KA01AB1234',capacity_t:20,available_t:12,status:'AVAILABLE',lat:null,lng:null,origin:null,destination:null,departure_at:null,driver_id:'driver-1',speed_kmph:null,heading:null,location_status:null,last_location_update:null}],
   capacity_offers: [{id:'offer-1',truck_id:'truck-1',route:'Bengaluru -> Chennai',available_t:12,departure_at:null,status:'OPEN',price_rule:'INR 2500 per Ton'}],
   shipments: [{id:'shipment-1',shipper_id:'org-1',origin:'Bengaluru',destination:'Chennai',weight_t:4,deadline_at:null,status:'DRAFT',truck_id:null,price:0,currency:'INR',created_at:null}],
   shipment_events: [{id:'event-1',shipment_id:'shipment-1',event_type:'CREATED',payload_json:'{"source":"legacy"}',actor_type:'SHIPPER',actor_id:'user-1',timestamp:null,hash:'abc',blockchain_tx:null,proof_status:'FALLBACK_RECORDED'}],
