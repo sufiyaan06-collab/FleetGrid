@@ -44,6 +44,11 @@ jobs:
           done
           cat /tmp/fleetgrid-server.log
           exit 1
+      - name: Run frontend browser integration tests
+        run: |
+          cd fleetgrid/web
+          npx playwright install --with-deps chromium
+          npm run test:e2e
       - name: Show API logs on failure
         if: failure()
         run: cat /tmp/fleetgrid-server.log || true
