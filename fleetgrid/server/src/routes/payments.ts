@@ -110,6 +110,14 @@ paymentsRouter.post(
     if (!shipment || (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && shipment.shipperId !== user.organizationId)) {
       throw ApiError.notFound('Shipment not found.');
     }
+    // The server-side shipment record is authoritative. Never accept a client-
+    // supplied amount as the source of truth or start a zero-value checkout.
+    if (!Number.isFinite(shipment.price) || shipment.price <= 0) {
+      throw ApiError.badRequest('Set a positive agreed shipment price before starting checkout.');
+    }
+    if (!/^[A-Z]{3}$/.test(shipment.currency)) {
+      throw ApiError.badRequest('The shipment must have a valid three-letter currency code before checkout.');
+    }
     const account = await db.authAccounts.findById(user.id);
     if (!account?.email) throw new ApiError(400, 'BILLING_EMAIL_REQUIRED', 'Add a verified account email before starting checkout.');
     const result = await createDodoCheckout({
