@@ -63,6 +63,9 @@ export async function createDodoCheckout(input: CreateDodoCheckoutInput): Promis
       if (!shipment) {
         throw ApiError.notFound(`Shipment ${input.shipmentId} does not exist.`);
       }
+      if (shipment.status !== 'CONFIRMED') {
+        throw ApiError.conflict('The driver must accept the shipment before payment can be collected.');
+      }
       const existingPayments = await db.payments.find((payment) =>
         payment.shipmentId === shipment!.id && payment.status !== 'FAILED',
       );
