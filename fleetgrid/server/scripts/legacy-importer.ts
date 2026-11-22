@@ -244,14 +244,15 @@ export function mapLegacySnapshot(input: LegacyTables): MigrationReport {
       });
       all[table]=all[table].filter(row=>!duplicateIds.has(str(row.id)??''));
     }
+    let missingColumn: string | null = null;
     for(const column of requiredColumns[table]) {
       const rows=all[table];
-      if(rows.length && rows.some(row=>!(column in row))) {
-        for(const row of rows) records.push({sourceTable:table,sourceId:str(row.id)??'<missing-id>',collection:null,outcome:'quarantined',data:null,issues:[{code:'SOURCE_SCHEMA_COLUMN_MISSING',field:column,severity:'error'}],sourceRow:row});
-        break;
-      }
+      if(rows.length && rows.some(row=>!(column in row))) { missingColumn=column; break; }
     }
-    if(records.some(r=>r.sourceTable===table)) continue;
+    if(missingColumn) {
+      for(const row of all[table]) records.push({sourceTable:table,sourceId:str(row.id)??'<missing-id>',collection:null,outcome:'quarantined',data:null,issues:[{code:'SOURCE_SCHEMA_COLUMN_MISSING',field:missingColumn,severity:'error'}],sourceRow:row});
+      continue;
+    }
     for(const row of all[table]) records.push(makeRecord(table,row,all));
   }
   // A row with a broken FK should be quarantined; optional references are warnings and null.
