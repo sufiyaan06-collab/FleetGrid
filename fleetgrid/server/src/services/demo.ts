@@ -35,6 +35,10 @@ export async function resetDemo(): Promise<{ trucks: number; shipments: number }
 
 /** Seeds automatically on a fresh clone so the demo works with zero manual steps. */
 export async function ensureSeeded(): Promise<{ seeded: boolean; trucks: number; shipments: number }> {
+  // Never populate a production database with deterministic demo identities or fleet records.
+  if (process.env.NODE_ENV === 'production') {
+    return { seeded: false, trucks: (await db.trucks.get()).length, shipments: (await db.shipments.get()).length };
+  }
   const existingTrucks = await db.trucks.get();
   if (existingTrucks.length > 0) {
     return { seeded: false, trucks: existingTrucks.length, shipments: (await db.shipments.get()).length };
