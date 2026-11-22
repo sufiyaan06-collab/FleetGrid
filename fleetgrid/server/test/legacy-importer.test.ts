@@ -2,10 +2,16 @@ import assert from 'node:assert/strict';
 import { mapLegacySnapshot } from '../scripts/legacy-importer.js';
 
 const valid = () => ({
-  organizations: [{id:'org-1',name:'Example Shipper',type:'SHIPPER',status:'ACTIVE',created_at:null}],
-  users: [{id:'user-1',name:'Example User',email:'private@example.invalid',role:'SHIPPER',organization_id:'org-1',contact:null,created_at:null}],
-  drivers: [{id:'driver-1',organization_id:'org-1',user_id:'user-1',assigned_truck_id:null,status:'AVAILABLE'}],
-  trucks: [{id:'truck-1',organization_id:'org-1',registration_no:'KA01AB1234',capacity_t:20,available_t:12,status:'AVAILABLE',lat:null,lng:null,origin:null,destination:null,departure_at:null,driver_id:'driver-1'}],
+  organizations: [
+    {id:'org-1',name:'Example Shipper',type:'SHIPPER',status:'ACTIVE',created_at:null},
+    {id:'org-2',name:'Example Fleet',type:'FLEET_OPERATOR',status:'ACTIVE',created_at:null},
+  ],
+  users: [
+    {id:'user-1',name:'Example Shipper User',email:'private@example.invalid',role:'SHIPPER',organization_id:'org-1',contact:null,created_at:null},
+    {id:'user-2',name:'Example Driver',email:'driver@example.invalid',role:'DRIVER',organization_id:'org-2',contact:null,created_at:null},
+  ],
+  drivers: [{id:'driver-1',organization_id:'org-2',user_id:'user-2',assigned_truck_id:null,status:'AVAILABLE'}],
+  trucks: [{id:'truck-1',organization_id:'org-2',registration_no:'KA01AB1234',capacity_t:20,available_t:12,status:'AVAILABLE',lat:null,lng:null,origin:null,destination:null,departure_at:null,driver_id:'driver-1'}],
   capacity_offers: [{id:'offer-1',truck_id:'truck-1',route:'Bengaluru -> Chennai',available_t:12,departure_at:null,status:'OPEN',price_rule:'INR 2500 per Ton'}],
   shipments: [{id:'shipment-1',shipper_id:'org-1',origin:'Bengaluru',destination:'Chennai',weight_t:4,deadline_at:null,status:'DRAFT',truck_id:null,price:0,currency:'INR',created_at:null}],
   shipment_events: [{id:'event-1',shipment_id:'shipment-1',event_type:'CREATED',payload_json:'{"source":"legacy"}',actor_type:'SHIPPER',actor_id:'user-1',timestamp:null,hash:'abc',blockchain_tx:null,proof_status:'FALLBACK_RECORDED'}],
@@ -17,8 +23,8 @@ const valid = () => ({
 
 const report = mapLegacySnapshot(valid());
 assert.equal(report.readOnly,true);
-assert.equal(report.summary.organizations.mapped,1);
-assert.equal(report.summary.users.mapped,1);
+assert.equal(report.summary.organizations.mapped,2);
+assert.equal(report.summary.users.mapped,2);
 assert.equal(report.summary.drivers.mapped,1);
 assert.equal(report.summary.trucks.mapped,1);
 assert.equal(report.summary['capacity_offers'].mapped,1);
@@ -37,7 +43,7 @@ assert.equal(user?.createdAt,null);
 assert.equal('email' in (user??{}),false,'email must never enter public user data');
 
 const driver=report.records.find(r=>r.sourceTable==='drivers')?.data;
-assert.equal(driver?.name,'Example User');
+assert.equal(driver?.name,'Example Driver');
 assert.equal(driver?.phone,null);
 assert.equal(driver?.createdAt,null);
 
