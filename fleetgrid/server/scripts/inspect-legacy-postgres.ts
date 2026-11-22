@@ -111,8 +111,8 @@ try {
   const distinctValues: Record<string, string[]> = {};
   for (const item of statusColumns) {
     const result = await pool.query<{ value: string | null }>(
-      `SELECT DISTINCT "${item.column_name}"::text AS value
-       FROM public."${item.table_name}"
+      `SELECT DISTINCT ${quoteIdentifier(item.column_name)}::text AS value
+       FROM public.${quoteIdentifier(item.table_name)}
        ORDER BY value NULLS FIRST`,
     );
     distinctValues[`${item.table_name}.${item.column_name}`] =
