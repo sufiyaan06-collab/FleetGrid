@@ -27,6 +27,10 @@ const expectedTables = [
   'notifications',
 ];
 
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
 const pool = new Pool({
   connectionString,
   max: 1,
@@ -47,7 +51,6 @@ try {
     `SELECT table_name, table_type
      FROM information_schema.tables
      WHERE table_schema = 'public'
-       AND table_name = ANY($1::text[])
      ORDER BY table_name`,
     [expectedTables],
   );
@@ -92,12 +95,13 @@ try {
     [expectedTables],
   );
 
-  const tableNames = tables.rows.map((row) => row.table_name);
+  const publicTableNames = tables.rows.map((row) => row.table_name);
+  const expectedPresentTables = expectedTables.filter((name) => publicTableNames.includes(name));
   const counts: Record<string, string> = {};
-  for (const table of tableNames) {
+  for (const table of expectedPresentTables) {
     // Table identifiers are selected only from the fixed allowlist above.
     const result = await pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM public."${table}"`,
+      `SELECT COUNT(*)::text AS count FROM public.${quoteIdentifier(table)}`,
     );
     counts[table] = result.rows[0]?.count ?? '0';
   }
@@ -121,8 +125,9 @@ try {
     database: 'legacy source (connection details omitted)',
     readOnly: true,
     expectedTables,
-    missingTables: expectedTables.filter((name) => !tableNames.includes(name)),
-    tables: tables.rows,
+    missingTables: expectedTables.filter((name) => !publicTableNames.includes(name)),
+    unexpectedPublicTables: publicTableNames.filter((name) => !expectedTables.includes(name)),
+    tables: tables.rows.filter((row) => expectedTables.includes(row.table_name)),
     rowCounts: counts,
     columns: columns.rows,
     foreignKeys: foreignKeys.rows,
