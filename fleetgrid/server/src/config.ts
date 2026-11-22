@@ -43,6 +43,10 @@ function envNum(key: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+export function isProductionEnvironment(): boolean {
+  return process.env.NODE_ENV === 'production' || process.env.RENDER === 'true' || Boolean(process.env.RENDER_SERVICE_ID);
+}
+
 export const config = {
   port: envNum('PORT', 4000),
   host: envStr('HOST', '0.0.0.0'),
@@ -56,7 +60,7 @@ export const config = {
   /** Reap dead websocket clients. */
   heartbeatMs: envNum('WS_HEARTBEAT_MS', 30_000),
   /** Reset demo data automatically when the data directory is empty. */
-  autoSeed: envStr('AUTO_SEED', process.env.NODE_ENV === 'production' ? 'false' : 'true') !== 'false',
+  autoSeed: envStr('AUTO_SEED', isProductionEnvironment() ? 'false' : 'true') !== 'false',
 } as const;
 
 export type AppConfig = typeof config;
