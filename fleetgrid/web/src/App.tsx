@@ -10,7 +10,7 @@ import { Login } from './views/Login';
 import { RoleSelect } from './views/RoleSelect';
 
 function Router() {
-  const { mode, session, signOut } = useFleet();
+  const { mode } = useFleet();
   let screen;
   if (mode === 'LANDING') screen = <LandingView />;
   else if (mode === 'REGISTER') screen = <Register />;
@@ -22,20 +22,7 @@ function Router() {
   else if (mode === 'DRIVER') screen = <Driver />;
   else screen = <RoleSelect />;
 
-  return (
-    <>
-      {screen}
-      {session?.mode === 'authenticated' && (
-        <button
-          type="button"
-          onClick={() => void signOut()}
-          className="fixed right-4 top-4 z-[100] rounded-md border border-base-600 bg-base-900/90 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-300 shadow-lg transition-colors hover:border-danger/50 hover:text-danger"
-        >
-          Sign out
-        </button>
-      )}
-    </>
-  );
+  return screen;
 }
 
 export default function App() {
