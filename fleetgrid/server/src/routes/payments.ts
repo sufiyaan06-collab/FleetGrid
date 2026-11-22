@@ -133,6 +133,30 @@ const createDodoCheckoutSchema = z.object({
   customerEmail: z.string().email().optional(),
 });
 
+paymentsRouter.get(
+  '/payments/dodo/status',
+  asyncHandler(async (_req, res) => {
+    const environment = process.env.DODO_ENVIRONMENT || 'test_mode';
+    const configured = {
+      apiKey: Boolean(process.env.DODO_PAYMENTS_API_KEY?.trim()),
+      product: Boolean(process.env.DODO_PRODUCT_ID?.trim()),
+      productCurrency: Boolean(process.env.DODO_PRODUCT_CURRENCY?.trim()),
+      webhookKey: Boolean(process.env.DODO_PAYMENTS_WEBHOOK_KEY?.trim()),
+      webhookEnabled: process.env.DODO_PAYMENTS_WEBHOOK_ENABLED === 'true',
+      appBaseUrl: Boolean(process.env.APP_BASE_URL?.trim()),
+    };
+    const ready = Object.values(configured).every(Boolean) &&
+      (environment === 'test_mode' || (environment === 'live_mode' && process.env.DODO_LIVE_PAYMENTS_ENABLED === 'true'));
+    res.json({
+      provider: 'Dodo Payments',
+      environment,
+      ready,
+      livePaymentsEnabled: process.env.DODO_LIVE_PAYMENTS_ENABLED === 'true',
+      configured,
+    });
+  }),
+);
+
 paymentsRouter.post(
   '/payments/dodo/checkout',
   requireRoles('BUSINESS'),
