@@ -126,10 +126,10 @@ export function Login() {
       <h1 className="text-2xl font-semibold tracking-tight text-ink-50">Sign in to FleetGrid</h1>
       <p className="mt-2 text-sm leading-relaxed text-ink-400">Use the email address and password you registered with.</p>
       <form onSubmit={resetToken ? submitPasswordReset : submit} className="mt-6 rounded-lg border border-base-700 bg-base-800/60 p-5">
-        <div>
+        {!resetToken && <div>
           <label className={labelCls} htmlFor="login-email">Email address</label>
           <input id="login-email" className={inputCls} type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
-        </div>
+        </div>}
         {!resetToken && !forgotMode && <div className="mt-4">
           <label className={labelCls} htmlFor="login-password">Password</label>
           <input id="login-password" className={inputCls} type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="Your password" />
