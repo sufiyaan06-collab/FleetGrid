@@ -4,13 +4,12 @@ import { z } from 'zod';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
-import { confirmDodoPayment, createDodoCheckout, failDodoPayment, getPayment, listPayments } from '../services/payments.js';
+import { confirmDodoPayment, createDodoCheckout, failDodoPayment, getPayment, listPayments, toDodoMinorUnits } from '../services/payments.js';
 import { db } from '../store/db.js';
 import { requireAuthenticated, requireRoles } from '../middleware/auth.js';
 import { requireTrustedOrigin } from '../middleware/trustedOrigin.js';
 import { ApiError } from '../lib/errors.js';
 import { isProductionEnvironment } from '../config.js';
-import { toDodoMinorUnits } from '../services/payments.js';
 import type { User } from '../types.js';
 
 export const paymentsRouter: Router = Router();
@@ -96,7 +95,7 @@ paymentsRouter.post(
     }
 
     if (event.type === 'payment.succeeded') {
-      if (data.status !== 'succeeded' || !Number.isSafeInteger(data.total_amount)) {
+      if (data.status !== 'succeeded' || !Number.isSafeInteger(data.total_amount) || !Number.isSafeInteger(data.tax ?? 0)) {
         console.warn('[DodoPayments] Ignored success event without a settled status and integer total', payment.id);
         res.json({ ok: true, ignored: true, reason: 'Payment was not reported as settled.' });
         return;
@@ -143,7 +142,7 @@ paymentsRouter.post(
     const user = res.locals.authUser as User;
     if (!body.shipmentId) throw ApiError.badRequest('A shipment must be linked to a shipper payment.');
     const shipment = await db.shipments.findById(body.shipmentId);
-    if (!shipment || (process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true' && shipment.shipperId !== user.organizationId)) {
+    if (!shipment || ((isProductionEnvironment() || process.env.FLEETGRID_TEST_BYPASS_AUTH !== 'true') && shipment.shipperId !== user.organizationId)) {
       throw ApiError.notFound('Shipment not found.');
     }
     // The server-side shipment record is authoritative. Never accept a client-
