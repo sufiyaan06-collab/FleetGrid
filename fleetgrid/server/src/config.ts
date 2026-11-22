@@ -56,7 +56,7 @@ export const config = {
   /** Reap dead websocket clients. */
   heartbeatMs: envNum('WS_HEARTBEAT_MS', 30_000),
   /** Reset demo data automatically when the data directory is empty. */
-  autoSeed: envStr('AUTO_SEED', 'true') !== 'false',
+  autoSeed: envStr('AUTO_SEED', process.env.NODE_ENV === 'production' ? 'false' : 'true') !== 'false',
 } as const;
 
 export type AppConfig = typeof config;
