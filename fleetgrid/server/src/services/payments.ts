@@ -21,7 +21,7 @@ export function toDodoMinorUnits(amount: number, currency: string): number {
   }
   let fractionDigits: number;
   try {
-    fractionDigits = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits;
+    fractionDigits = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
   } catch {
     throw ApiError.badRequest('The shipment currency is not supported for payment processing.');
   }
