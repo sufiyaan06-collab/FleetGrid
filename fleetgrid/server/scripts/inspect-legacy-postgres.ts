@@ -32,7 +32,7 @@ const pool = new Pool({
   max: 1,
   application_name: 'fleetgrid-legacy-schema-inspector',
   ...(process.env.PGSSLMODE === 'require'
-    ? { ssl: { rejectUnauthorized: false } }
+    ? { ssl: { rejectUnauthorized: true } }
     : {}),
 });
 
