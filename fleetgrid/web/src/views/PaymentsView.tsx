@@ -28,7 +28,34 @@ export function PaymentsView() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Payment | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState('');
+  const [providerStatus, setProviderStatus] = useState<{ ready: boolean; environment: string; configured: Record<string, boolean> } | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'FAILED'>('ALL');
+
+  useEffect(() => {
+    void api.dodoStatus().then(setProviderStatus).catch(() => setProviderStatus(null));
+  }, []);
+
+  // A provider return is only a navigation hint. Read the server's payment row;
+  // never infer success from query parameters.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('payment');
+    const paymentId = params.get('id');
+    if (result === 'return' && paymentId) {
+      setCheckoutNotice('Checking the provider-confirmed payment status…');
+      void api.payment(paymentId).then(({ payment }) => {
+        setActiveReceipt(payment);
+        setCheckoutNotice(payment.status === 'PAID'
+          ? 'Dodo has confirmed this payment. FleetGrid received the verified provider event.'
+          : `The provider currently reports ${payment.status}. FleetGrid will update the record after a verified settlement event.`);
+        void refresh();
+      }).catch(() => setCheckoutNotice('We could not retrieve this payment record. Refresh the payment list or contact FleetGrid support.'));
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+    } else if (result === 'cancelled') {
+      setCheckoutNotice('Checkout was cancelled or closed. No payment has been marked as paid.');
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+    }
+  }, []);
 
   // Use only the price and currency stored on the selected shipment.
   // Do not invent tolls, platform fees, taxes, or a fallback freight price.
@@ -122,7 +149,7 @@ export function PaymentsView() {
               title="Freight Capacity Settlement"
               actions={
                 <span className="font-mono text-2xs text-healthy">
-                  ● Provider connection required
+                  ● {providerStatus?.ready ? `Dodo ${providerStatus.environment.replace('_mode', '')} configured` : 'Dodo setup incomplete'}
                 </span>
               }
             >
@@ -192,6 +219,7 @@ export function PaymentsView() {
                 <div className="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-ink-300">
                   <div className="font-semibold text-ink-100">Payment provider: Dodo Payments</div>
                   <p className="mt-1 text-ink-400">Available payment methods depend on your Dodo merchant configuration and the customer’s location. FleetGrid never collects card or bank credentials.</p>
+                  {!providerStatus?.ready && <p className="mt-2 text-warn">Dodo checkout is not ready. Configure the API key, pay-what-you-want product, currency, signed webhook, and public app URL in the server environment.</p>}
                 </div>
 
                 {/* Display the shipment's stored agreed amount; no invented fee/tax estimates. */}
@@ -216,11 +244,11 @@ export function PaymentsView() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    disabled={isProcessing || !selectedShipment || !hasValidAmount || session?.user.role !== 'BUSINESS'}
+                    disabled={isProcessing || !providerStatus?.ready || !selectedShipment || !hasValidAmount || session?.user.role !== 'BUSINESS'}
                     onClick={handleInitiatePayment}
                     className="flex-1 rounded-lg bg-healthy px-4 py-3 font-mono text-xs font-bold tracking-wider text-base-950 uppercase shadow-md transition-all hover:bg-healthy/90 active:scale-[0.99] disabled:opacity-50"
                   >
-                    {isProcessing ? 'Connecting to Dodo Payments…' : session?.user.role !== 'BUSINESS' ? 'Shipper account required to pay' : hasValidAmount ? `Pay ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)} via Dodo` : 'Shipment price required'}
+                    {isProcessing ? 'Connecting to Dodo Payments…' : !providerStatus?.ready ? 'Dodo setup required' : session?.user.role !== 'BUSINESS' ? 'Shipper account required to pay' : hasValidAmount ? `Pay ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)} via Dodo` : 'Shipment price required'}
                   </button>
                 </div>
               </div>
@@ -323,8 +351,8 @@ export function PaymentsView() {
           <div className="w-full max-w-lg rounded-xl border border-healthy/40 bg-base-900 p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-base-700 pb-3">
               <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-healthy text-base-950 text-xs font-bold">
-                  ✓
+                <span className="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold', activeReceipt.status === 'PAID' ? 'bg-healthy text-base-950' : 'bg-warn text-base-950">
+                  {activeReceipt.status === 'PAID' ? '✓' : '…'}
                 </span>
                 <h3 className="font-mono text-sm font-bold text-ink-50">FleetGrid Payment Record</h3>
               </div>
@@ -340,7 +368,7 @@ export function PaymentsView() {
             <div className="mt-4 space-y-4 font-mono text-xs">
               <div className="rounded-lg border border-base-700 bg-base-850 p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-2xs uppercase text-ink-400">Total Settled</span>
+                  <span className="text-2xs uppercase text-ink-400">Agreed Amount</span>
                   <span className="text-lg font-bold text-healthy">
                     {formatMoney(activeReceipt.amount, activeReceipt.currency)}
                   </span>
