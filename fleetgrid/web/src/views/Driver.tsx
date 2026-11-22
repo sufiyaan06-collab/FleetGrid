@@ -14,14 +14,14 @@ const INCIDENT_TYPES: Array<{ value: IncidentType; label: string; defaultLocatio
   {
     value: 'TRUCK_BREAKDOWN',
     label: 'Truck Breakdown',
-    defaultLocation: 'Hosur (NH-48 km 42)',
+    defaultLocation: '',
     defaultDescription: 'Engine failure / truck unable to continue',
   },
-  { value: 'ACCIDENT', label: 'Accident', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Highway collision / road hazard' },
-  { value: 'DELAY', label: 'Delay', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Traffic bottleneck / running behind schedule' },
-  { value: 'ROUTE_BLOCKED', label: 'Route Blocked', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Road closure / detour required' },
-  { value: 'CARGO_DAMAGE', label: 'Cargo Damage', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Cargo seal damaged or shifted' },
-  { value: 'OTHER', label: 'Other', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Other road emergency' },
+  { value: 'ACCIDENT', label: 'Accident', defaultLocation: '', defaultDescription: 'Highway collision / road hazard' },
+  { value: 'DELAY', label: 'Delay', defaultLocation: '', defaultDescription: 'Traffic bottleneck / running behind schedule' },
+  { value: 'ROUTE_BLOCKED', label: 'Route Blocked', defaultLocation: '', defaultDescription: 'Road closure / detour required' },
+  { value: 'CARGO_DAMAGE', label: 'Cargo Damage', defaultLocation: '', defaultDescription: 'Cargo seal damaged or shifted' },
+  { value: 'OTHER', label: 'Other', defaultLocation: '', defaultDescription: 'Other road emergency' },
 ];
 
 const EMERGENCY_REASONS = [
@@ -31,18 +31,6 @@ const EMERGENCY_REASONS = [
   { id: 'medical', label: '🏥 Driver Medical Emergency', desc: 'Sudden illness or fatigue; immediate relief driver required' },
 ];
 
-// Seeded roster stats for enriched driver experience
-const DRIVER_METRICS: Record<string, { safetyScore: number; completedHauls: number; license: string }> = {
-  drv_ravi_kumar: { safetyScore: 99.4, completedHauls: 184, license: 'DL-04-2018-992144' },
-  drv_imran_sheikh: { safetyScore: 98.8, completedHauls: 156, license: 'DL-09-2019-441029' },
-  drv_suresh_naidu: { safetyScore: 97.9, completedHauls: 142, license: 'DL-03-2020-881240' },
-  drv_anita_fernandes: { safetyScore: 99.8, completedHauls: 210, license: 'DL-04-2017-331902' },
-  drv_vikram_reddy: { safetyScore: 98.2, completedHauls: 129, license: 'DL-21-2021-771804' },
-  drv_meena_subramanian: { safetyScore: 99.1, completedHauls: 167, license: 'DL-22-2019-552199' },
-  drv_harish_gowda: { safetyScore: 96.5, completedHauls: 98, license: 'DL-51-2022-114402' },
-  drv_divya_pillai: { safetyScore: 99.6, completedHauls: 175, license: 'DL-07-2018-662391' },
-  drv_ganesh_murthy: { safetyScore: 98.5, completedHauls: 133, license: 'DL-10-2020-994411' },
-};
 
 export function Driver() {
   const { snapshot, session, refresh, connection, flashIds, flashTone, setMode } = useFleet();
@@ -50,22 +38,18 @@ export function Driver() {
   // Active View Tab: 'CAB' (individual driver cabin) or 'ROSTER' (fleet drivers directory)
   const [activeTab, setActiveTab] = useState<'CAB' | 'ROSTER'>('CAB');
 
-  // Selected driver ID (defaults to logged-in driver or Ravi Kumar FG-027)
-  const [selectedDriverId, setSelectedDriverId] = useState<string>(
-    session?.driver?.id ?? 'drv_ravi_kumar',
-  );
+  // Drivers stay scoped to their authenticated profile; Operations may select a roster entry.
+  const [selectedDriverId, setSelectedDriverId] = useState<string>(session?.driver?.id ?? '');
 
   const activeDriver: DriverType | null = useMemo(() => {
-    return (
-      snapshot.drivers.find((d) => d.id === selectedDriverId) ??
-      snapshot.drivers.find((d) => d.id === (session?.driver?.id ?? 'drv_ravi_kumar')) ??
-      snapshot.drivers[0] ??
-      null
-    );
-  }, [snapshot.drivers, selectedDriverId, session?.driver?.id]);
+    if (session?.user.role === 'DRIVER') {
+      return session.driver ?? snapshot.drivers.find((d) => d.userId === session.user.id) ?? null;
+    }
+    return snapshot.drivers.find((d) => d.id === selectedDriverId) ?? snapshot.drivers[0] ?? null;
+  }, [snapshot.drivers, selectedDriverId, session?.driver, session?.user.id, session?.user.role]);
 
-  const truckId = activeDriver?.assignedTruckId ?? session?.driver?.assignedTruckId ?? 'FG-027';
-  const truck = snapshot.trucks.find((t) => t.id === truckId) ?? null;
+  const truckId = activeDriver?.assignedTruckId ?? null;
+  const truck = truckId ? snapshot.trucks.find((t) => t.id === truckId) ?? null : null;
 
   const assigned = useMemo(
     () =>
@@ -92,7 +76,7 @@ export function Driver() {
   const [selectedSosReason, setSelectedSosReason] = useState(EMERGENCY_REASONS[0]?.id ?? 'engine_fire');
 
   const [incidentType, setIncidentType] = useState<IncidentType>('TRUCK_BREAKDOWN');
-  const [location, setLocation] = useState('Hosur (NH-48 km 42)');
+  const [location, setLocation] = useState('');
   const [description, setDescription] = useState('Engine failure / truck unable to continue');
 
   // Offers queue from server
@@ -305,7 +289,7 @@ export function Driver() {
                     {activeDriver?.name ?? 'Driver'}
                   </h1>
                   <div className="font-mono text-[11px] text-ink-400">
-                    {activeDriver?.phone} &bull; {DRIVER_METRICS[activeDriver?.id ?? '']?.license ?? 'DL-Commercial'}
+                    {activeDriver?.phone} &bull; License details not provided
                   </div>
                 </div>
               </div>
@@ -331,7 +315,7 @@ export function Driver() {
                         EMERGENCY SOS BROADCAST ACTIVE
                       </div>
                       <div className="mt-0.5 text-xs text-ink-200">
-                        GPS distress beacon transmitting to Control Tower &bull; Tow &amp; Rescue dispatched
+                        Incident recorded and visible to the Control Tower for response coordination
                       </div>
                     </div>
                   </div>
@@ -692,7 +676,6 @@ export function Driver() {
               {snapshot.drivers.map((drv) => {
                 const assignedTruck = snapshot.trucks.find((t) => t.id === drv.assignedTruckId);
                 const isCurrent = drv.id === selectedDriverId;
-                const metrics = DRIVER_METRICS[drv.id] ?? { safetyScore: 98.0, completedHauls: 120, license: 'DL-Commercial' };
 
                 return (
                   <div
@@ -733,12 +716,9 @@ export function Driver() {
                         <span className="font-mono text-ink-300">{assignedTruck?.registrationNo ?? '—'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-ink-500">Safety Score:</span>
-                        <span className="font-mono text-ink-100">{metrics.safetyScore}% on-time</span>
-                      </div>
                       <div className="flex justify-between">
-                        <span className="text-ink-500">Completed Hauls:</span>
-                        <span className="font-mono text-ink-100">{metrics.completedHauls} trips</span>
+                        <span className="text-ink-500">Performance:</span>
+                        <span className="font-mono text-ink-400">No verified history yet</span>
                       </div>
                     </div>
 
