@@ -198,9 +198,9 @@ export function Driver() {
     setBusy(true);
     setError(null);
     const chosen = EMERGENCY_REASONS.find((r) => r.id === selectedSosReason) ?? EMERGENCY_REASONS[0];
-    const loc = truck.lat && truck.lng
-      ? `NH-48 Corridor (GPS: ${truck.lat.toFixed(4)}, ${truck.lng.toFixed(4)}) near Hosur`
-      : 'NH-48 Corridor near Hosur km 42';
+    const loc = typeof truck.lat === 'number' && typeof truck.lng === 'number'
+      ? `GPS coordinates: ${truck.lat.toFixed(6)}, ${truck.lng.toFixed(6)}`
+      : location.trim() || 'Location unavailable (GPS fix not available)';
 
     const reasonText = chosen ? `${chosen.label} - ${chosen.desc}` : 'Mechanical Breakdown';
 
@@ -332,20 +332,7 @@ export function Driver() {
                   <span>&bull;</span>
                   <span>Speed: 0 km/h</span>
                   <span>&bull;</span>
-                  <span className="text-healthy font-semibold">AI Reroute Engine: STANDBY DETOUR</span>
-                </div>
-              </div>
-            )}
-
-            {/* AI CORRIDOR REROUTE ADVISORY (shown if incident or detour active) */}
-            {isSosIncident && (
-              <div className="rounded-lg border border-warn/40 bg-warn/10 p-3.5 text-xs text-warn">
-                <div className="flex items-center gap-2 font-bold uppercase tracking-wider">
-                  <span>⚠️</span>
-                  <span>Authorized Highway Detour Route</span>
-                </div>
-                <div className="mt-1.5 leading-relaxed text-ink-300">
-                  NH-48 obstructed at Hosur km 42. Detour via <strong className="text-ink-100">SH-17 Denkanikottai Bypass</strong> is approved by Control Tower. Rejoin NH-48 at Krishnagiri. Expected ETA overhead: +32 mins (+24 km).
+                  <span className="text-ink-300 font-semibold">Incident sent to Control Tower</span>
                 </div>
               </div>
             )}
@@ -715,7 +702,6 @@ export function Driver() {
                         <span className="text-ink-500">Plate:</span>
                         <span className="font-mono text-ink-300">{assignedTruck?.registrationNo ?? '—'}</span>
                       </div>
-                      <div className="flex justify-between">
                       <div className="flex justify-between">
                         <span className="text-ink-500">Performance:</span>
                         <span className="font-mono text-ink-400">No verified history yet</span>
