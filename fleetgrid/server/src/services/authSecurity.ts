@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { ApiError } from '../lib/errors.js';
+import { isProductionEnvironment } from '../config.js';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'fleetgrid_session';
@@ -44,7 +45,7 @@ export const issueSessionToken = (): IssuedToken => issueToken(SESSION_TTL_MS);
 export const issueVerificationToken = (): IssuedToken => issueToken(VERIFY_TTL_MS);
 
 export function setSessionCookie(res: { setHeader(name: string, value: string): void }, token: string): void {
-  const production = process.env.NODE_ENV === 'production';
+  const production = isProductionEnvironment();
   const secure = production ? '; Secure' : '';
   const sameSite = 'Lax';
   res.setHeader(
@@ -54,7 +55,7 @@ export function setSessionCookie(res: { setHeader(name: string, value: string): 
 }
 
 export function clearSessionCookie(res: { setHeader(name: string, value: string): void }): void {
-  const production = process.env.NODE_ENV === 'production';
+  const production = isProductionEnvironment();
   const secure = production ? '; Secure' : '';
   const sameSite = production ? 'None' : 'Lax';
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure}`);
