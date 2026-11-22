@@ -22,6 +22,17 @@ const [{ createApp }, { db }, security, registration] = await Promise.all([
   import('../src/services/registration.js'),
 ]);
 
+const nativeFetch = globalThis.fetch;
+let resetLinkToken: string | null = null;
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input) === 'https://api.resend.com/emails') {
+    const payload = JSON.parse(String(init?.body ?? '{}')) as { text?: string };
+    resetLinkToken = payload.text?.match(/resetToken=([^\\s]+)/)?.[1] ?? null;
+    return new Response('{}', { status: 200 });
+  }
+  return nativeFetch(input, init);
+};
+
 const server = createServer(createApp());
 await db.initialize();
 await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -124,6 +135,52 @@ try {
   const forbiddenRecovery = await request('/recovery-plans', { headers: { cookie: first.cookie } });
   assert.equal(forbiddenRecovery.status, 403, 'shipper cannot access operations-only recovery endpoints');
 
+  // Exercise the real password-reset token flow against a mocked email provider.
+  process.env.RESEND_API_KEY = 'test-resend-key';
+  process.env.EMAIL_FROM = 'FleetGrid Test <test@example.test>';
+  process.env.APP_BASE_URL = base;
+  const forgot = await request('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email: 'first@example.test' }),
+  });
+  assert.equal(forgot.status, 202, 'password reset request is accepted');
+  assert.ok(resetLinkToken, 'password reset email contains a one-time reset token');
+  const reset = await request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token: resetLinkToken, password: 'New-Test-Password-2026!' }),
+  });
+  assert.equal(reset.status, 200, 'valid reset token changes the password');
+  const replayReset = await request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token: resetLinkToken, password: 'Another-Test-Password-2026!' }),
+  });
+  assert.equal(replayReset.status, 400, 'password reset token is single use');
+  const oldPasswordLogin = await request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: 'first@example.test', password: 'Test-Password-2026!' }),
+  });
+  assert.equal(oldPasswordLogin.status, 401, 'old password is rejected after reset');
+  const newPasswordLogin = await request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: 'first@example.test', password: 'New-Test-Password-2026!' }),
+  });
+  assert.equal(newPasswordLogin.status, 200, 'new password signs in successfully');
+
+  // Simulate Render production even in the isolated test process.
+  process.env.RENDER_SERVICE_ID = 'srv-auth-test';
+  process.env.FLEETGRID_TEST_BYPASS_AUTH = 'true';
+  const productionBypass = await request('/state');
+  assert.equal(productionBypass.status, 401, 'test authentication bypass is disabled on Render');
+  const csrfRejected = await request('/auth/logout', { method: 'POST' });
+  assert.equal(csrfRejected.status, 403, 'production cookie mutations require a trusted Origin');
+  const csrfAccepted = await request('/auth/logout', {
+    method: 'POST',
+    headers: { origin: base },
+  });
+  assert.equal(csrfAccepted.status, 200, 'same-origin browser mutations are accepted');
+  delete process.env.RENDER_SERVICE_ID;
+  delete process.env.FLEETGRID_TEST_BYPASS_AUTH;
+
   const logout = await request('/auth/logout', { method: 'POST', headers: { cookie: first.cookie } });
   assert.equal(logout.status, 200);
   const afterLogout = await request('/auth/me', { headers: { cookie: first.cookie } });
@@ -133,5 +190,6 @@ try {
 } finally {
   await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   await db.close();
+  globalThis.fetch = nativeFetch;
   await rm(dataDir, { recursive: true, force: true });
 }
