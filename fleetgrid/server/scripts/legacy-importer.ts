@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 
 export type LegacyRow = Record<string, unknown>;
-export type LegacyTables = Record<string, LegacyRow[]>;
 export type MigrationOutcome = 'mapped' | 'quarantined';
 export interface MigrationIssue { code: string; field?: string; severity: 'warning' | 'error'; }
 export interface MigrationRecord {
@@ -25,6 +24,7 @@ const TABLES = [
   'shipment_events','incidents','recovery_plans','payments','notifications',
 ] as const;
 type TableName = typeof TABLES[number];
+export type LegacyTables = Partial<Record<TableName, LegacyRow[]>>;
 const COLLECTION: Record<TableName, string> = {
   organizations:'organizations', users:'users', drivers:'drivers', trucks:'trucks',
   capacity_offers:'capacity-offers', shipments:'shipments', shipment_events:'shipment-events',
@@ -226,7 +226,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
 }
 
 export function mapLegacySnapshot(input: LegacyTables): MigrationReport {
-  const all: LegacyTables = Object.fromEntries(TABLES.map(t=>[t,input[t]??[]]));
+  const all = Object.fromEntries(TABLES.map(t=>[t,input[t]??[]])) as Record<TableName, LegacyRow[]>;
   const records: MigrationRecord[]=[];
   const sourceCounts=Object.fromEntries(TABLES.map(table=>[table,all[table].length])) as Record<TableName,number>;
   for(const table of TABLES) {
