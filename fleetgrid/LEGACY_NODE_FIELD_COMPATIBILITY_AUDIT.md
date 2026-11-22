@@ -67,3 +67,8 @@ Do not cast legacy rows to Node interfaces and insert them. That would make inva
 - Earlier mapping proposal: `LEGACY_TO_NODE_MAPPING_SPEC.md`.
 
 **Release gate: NO-GO for production migration or cutover.** This audit intentionally does not authorize schema mutation, production writes, PR merge, or deployment.
+
+
+## Superseding decision record (2026-11-23)
+
+The unresolved-policy sections above are historical audit notes and are superseded by [DATABASE_COMPATIBILITY_DECISIONS_2026-11-23.md](./DATABASE_COMPATIBILITY_DECISIONS_2026-11-23.md). That decision record is the authoritative compatibility policy for nullable legacy-origin fields, role mapping, enum preservation, timestamp handling, quarantine rules, privacy, and staging gates. The policy is now decided; importer implementation and all database writes remain gated by the acceptance steps in that record. No production migration, merge, or deployment is authorized.
