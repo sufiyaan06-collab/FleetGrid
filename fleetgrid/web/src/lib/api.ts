@@ -292,6 +292,7 @@ export const api = {
     post<{ ok: true; event: ShipmentEvent }>('/events', input),
 
   // Dodo Payments Integrations
+  dodoStatus: () => request<{ provider: string; environment: string; ready: boolean; livePaymentsEnabled: boolean; configured: Record<string, boolean> }>('/payments/dodo/status'),
   createDodoCheckout: (input: {
     shipmentId?: string | null;
     recoveryPlanId?: string | null;
