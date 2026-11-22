@@ -81,6 +81,8 @@ export interface AuthAccount {
   emailVerifiedAt: string | null;
   verificationTokenHash: string | null;
   verificationExpiresAt: string | null;
+  passwordResetTokenHash?: string | null;
+  passwordResetExpiresAt?: string | null;
   sessionTokenHash: string | null;
   sessionExpiresAt: string | null;
   failedLoginCount: number;
