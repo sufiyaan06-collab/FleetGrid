@@ -26,10 +26,17 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ children }: AppHeaderProps) {
-  const { connection, mode, setMode, lastEvent } = useFleet();
+  const { connection, mode, setMode, lastEvent, session, signOut } = useFleet();
   const [switching, setSwitching] = useState(false);
   const [voiceAssistantOpen, setVoiceAssistantOpen] = useState(false);
   const copy = CONNECTION_COPY[connection];
+  const visibleModes = !session
+    ? MODES
+    : session.user.role === 'DRIVER'
+      ? MODES.filter((item) => ['LANDING', 'DRIVER', 'LIVE_MAP'].includes(item.id))
+      : session.user.role === 'BUSINESS'
+        ? MODES.filter((item) => ['LANDING', 'BUSINESS', 'LIVE_MAP'].includes(item.id))
+        : MODES.filter((item) => ['LANDING', 'CONTROL_TOWER', 'LIVE_MAP'].includes(item.id));
 
   return (
     <header className="sticky top-0 z-30 border-b border-base-600 bg-base-950/90 backdrop-blur-md">
@@ -80,7 +87,7 @@ export function AppHeader({ children }: AppHeaderProps) {
         </button>
 
         <div className="ml-auto flex items-center gap-1 rounded-md border border-base-600 bg-base-850 p-0.5">
-          {MODES.map((m) => {
+          {visibleModes.map((m) => {
             const active = mode === m.id;
             const isMap = m.id === 'LIVE_MAP';
             return (
@@ -114,6 +121,22 @@ export function AppHeader({ children }: AppHeaderProps) {
             );
           })}
         </div>
+
+        {session?.mode === 'authenticated' && (
+          <div className="flex items-center gap-2 border-l border-base-600 pl-3">
+            <div className="hidden text-right sm:block">
+              <div className="text-[11px] font-semibold text-ink-100">{session.user.name}</div>
+              <div className="text-[9px] uppercase tracking-[0.12em] text-ink-500">{session.organization?.name ?? session.user.role}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="rounded-md border border-base-600 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-300 transition-colors hover:border-danger/50 hover:text-danger"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
       {children}
 
