@@ -46,6 +46,7 @@ services:
     name: fleetgrid-backend
     runtime: python
     plan: free
+    autoDeploy: false
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     # Do not run Alembic DDL automatically on production startup; migrate only after backup and approval.
