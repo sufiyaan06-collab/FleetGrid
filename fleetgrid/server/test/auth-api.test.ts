@@ -76,6 +76,14 @@ async function makeBusiness(name: string, email: string) {
 try {
   const health = await request('/health');
   assert.equal(health.status, 200, 'health endpoint remains public');
+  const healthBody = await health.json() as {
+    readiness: { persistentStorage: boolean; emailDelivery: boolean };
+    payments: { mode: string; realMoneyEnabled: boolean };
+  };
+  assert.equal(healthBody.readiness.persistentStorage, false, 'health reports the isolated test JSON adapter');
+  assert.equal(healthBody.readiness.emailDelivery, false, 'health reports missing email delivery configuration without exposing secrets');
+  assert.equal(healthBody.payments.mode, 'DEMO_ONLY');
+  assert.equal(healthBody.payments.realMoneyEnabled, false);
 
   const anonymousState = await request('/state');
   assert.equal(anonymousState.status, 401, 'operational state is not public');
