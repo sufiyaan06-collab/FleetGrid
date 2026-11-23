@@ -68,3 +68,51 @@ The integration branch is currently 332 commits ahead of `main` and changes 72 f
 - The Node service's candidate Blueprint no longer binds `DATABASE_URL` to the legacy `fleetgrid-db`; the Python service remains the only service connected to that database. The Node application intentionally refuses production startup without a separately selected PostgreSQL target and the explicit schema-readiness gate.
 - Free database review: Neon currently lists a $0 Free plan with 1 GB per project, 100 compute-hours/month, 5 GB public transfer, and a 6-hour instant-restore history; compute scales to zero after inactivity. It is suitable for a student demonstration within limits, but is not a substitute for independently verified backups. Supabase Free provides 500 MB and may pause projects after seven days of low activity. No provider account or database was created. References: https://neon.com/docs/introduction/plans and https://supabase.com/docs/guides/platform/free-project-pausing.
 - A read-only audit of the current Render service configuration and logs confirmed that no production service was deployed from the candidate branch and no production database writes occurred.
+
+
+## Progress addendum — 2026-11-24 (security and nullable-data pass)
+
+### Latest candidate verification
+
+GitHub Actions run [45290569896](https://github.com/sufiyaan06-collab/FleetGrid/actions/runs/45290569896) completed successfully for commit `f08acc956ee314dd1f9d12b5b83b2dd758e5d2b4`. It passed:
+- React/Vite and Node/Express build.
+- Node backend integration and safety tests.
+- Python FastAPI backend tests.
+- Playwright browser integration tests.
+
+The workflow now watches `backend/**` and runs the Python tests as part of the same CI job.
+
+### Additional implementation completed
+
+- The auxiliary Python API is disabled in production by default. Only root and health endpoints remain available unless an explicit enable flag is set after a separate security review.
+- Python payment creation, payment lookup, and Dodo webhook endpoints return HTTP 410. The dormant Python payment service fails closed.
+- Python demo data seeding is blocked in production.
+- The Render Blueprint no longer runs Alembic migrations automatically at Python service startup; schema changes require a separately reviewed manual operation.
+- The Python health endpoint reports API/payment disablement. The Blueprint restricts CORS to the FleetGrid web origins.
+- Legacy users without a valid organization assignment are quarantined, not inserted as active tenant users.
+- Legacy organization/driver/truck/offer timestamps and contact/route/pricing metadata now allow nulls where required by the current source rows. Incomplete legacy offers are retained but cannot be searched, booked, or used for recovery estimates.
+- Maps and recovery planning now avoid inventing locations, routes, or distances when GPS/route values are absent.
+
+### Branch reconciliation
+
+The integration branch currently compares as **402 commits ahead, 1 commit behind, and 91 changed files** relative to `main`. The one main-only commit is `236c1e4` (`fix(capacity): exclude legacy offers without route or price from booking`); the integration branch contains a stricter superset of that guard. Before a release PR is opened, this small ancestry difference should be reconciled and the final diff reviewed. No merge to `main` has occurred.
+
+### Live deployment remains unchanged
+
+The above are candidate-branch changes, not live production changes.
+
+- The live Node Render service still tracks `main` with auto-deploy enabled.
+- The live Python Render service also still tracks `main` with auto-deploy enabled. Its current Render service start command still runs `alembic upgrade head` before Uvicorn; the candidate Blueprint removes that automatic migration.
+- Therefore the live Python service has **not** yet received the production API gate, Dodo route shutdown, or production seed guard. The old service remains publicly reachable until a reviewed deployment/configuration change is approved.
+- The live Node service likewise has not received the new authentication or demo-payment implementation.
+- The current Render PostgreSQL free instance still expires **2026-12-15**. It has no verified backup/restore path, and the Node `fleetgrid_records` table remains absent.
+
+### Remaining release blockers
+
+1. Connect/provision a free persistent PostgreSQL target (Neon is the proposed option), then verify a backup and restore of the legacy relational database before any import.
+2. Complete the remaining nullable-field compatibility review for legacy tables that currently contain zero rows (shipments, events, incidents, recovery plans, payments, notifications).
+3. Configure and verify production email delivery (Resend API key, verified sender, and public app URL), or explicitly approve a controlled administrator-provisioned demo-account path.
+4. Reconcile the one-commit main ancestry difference, create a reviewed release PR, and obtain explicit production cutover approval.
+5. Update the actual Render service settings safely before deployment; the current dashboard settings do not automatically change just because `render.yaml` changed on the integration branch.
+
+No production database writes, migrations, account provisioning, merges, or deployments were performed during this pass.
