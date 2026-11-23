@@ -117,8 +117,8 @@ export interface CapacityOffer {
   id: string;
   truckId: string;
   route: string;
-  origin: string;
-  destination: string;
+  origin: string | null;
+  destination: string | null;
   availableT: number;
   departureAt: string | null;
   status: 'OPEN' | 'HELD' | 'CLOSED';
