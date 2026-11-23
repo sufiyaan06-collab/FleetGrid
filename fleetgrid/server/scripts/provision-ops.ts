@@ -9,6 +9,16 @@ const name = process.env.OPS_NAME?.trim();
 const roleValue = process.env.OPS_ROLE ?? 'OPERATOR';
 const allowedRoles: Role[] = ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'];
 
+const production = process.env.NODE_ENV === 'production'
+  || process.env.RENDER === 'true'
+  || Boolean(process.env.RENDER_SERVICE_ID);
+if (production && (
+  process.env.FLEETGRID_ALLOW_OPS_PROVISIONING !== 'true'
+  || !process.argv.includes('--confirm-production')
+)) {
+  throw new Error('Production operations-account provisioning requires FLEETGRID_ALLOW_OPS_PROVISIONING=true and --confirm-production.');
+}
+
 if (!email || !password || !name) {
   throw new Error('Set OPS_EMAIL, OPS_PASSWORD, and OPS_NAME before running this command.');
 }
