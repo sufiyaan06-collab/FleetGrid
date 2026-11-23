@@ -264,7 +264,7 @@ export function ControlTower() {
                         />
                       </div>
                       <div className="mt-1 text-[10px] text-ink-500">
-                        {truck.origin} → {truck.destination} · {truck.registrationNo}
+                        {truck.origin ?? 'Route not recorded'} → {truck.destination ?? 'Route not recorded'} · {truck.registrationNo}
                       </div>
                       <div className="mt-2 flex items-center gap-2">
                         <div className="h-1 flex-1 overflow-hidden rounded-full bg-base-700">
