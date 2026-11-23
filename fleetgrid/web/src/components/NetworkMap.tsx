@@ -39,10 +39,10 @@ export function NetworkMap({ trucks, incidents, flashIds, flashTone, onSelectTru
 
   const placed = useMemo(() => {
     const items = trucks
-      .map((truck) => ({
-        truck,
-        progress: progressFor(truck.lat, truck.lng, truck.origin, truck.destination),
-      }))
+      .flatMap((truck) => {
+        const progress = progressFor(truck.lat, truck.lng, truck.origin, truck.destination);
+        return progress === null ? [] : [{ truck, progress }];
+      })
       .sort((a, b) => a.progress - b.progress);
 
     let lastProgress = -1;
@@ -157,11 +157,16 @@ export function NetworkMap({ trucks, incidents, flashIds, flashTone, onSelectTru
           No trucks in the network.
         </div>
       )}
+      {trucks.length > 0 && placed.length === 0 && (
+        <div className="absolute inset-0 grid place-items-center text-2xs text-ink-500">
+          No trucks have complete GPS and corridor data to plot.
+        </div>
+      )}
 
       <div className="absolute bottom-2 left-3 flex items-center gap-2 text-[9px] uppercase tracking-[0.12em] text-ink-600">
         <span>Corridor schematic</span>
         <span className="h-2 w-px bg-base-600" />
-        <span>Positions simulated</span>
+        <span>GPS positions only</span>
       </div>
     </div>
   );
