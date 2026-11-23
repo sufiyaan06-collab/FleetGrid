@@ -51,7 +51,15 @@ export async function createDemoPayment(shipmentId: string, actor: User): Promis
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    const saved = await db.payments.create(payment);
+    let saved: Payment;
+    try {
+      saved = await db.payments.create(payment);
+    } catch (error) {
+      if ((error as { constraint?: string }).constraint === 'fleetgrid_active_payment_shipment_unique_idx') {
+        throw ApiError.conflict('A payment is already awaiting confirmation for this shipment.');
+      }
+      throw error;
+    }
     await recordEvent({
       eventType: 'payment.demo_created',
       shipmentId: shipment.id,
