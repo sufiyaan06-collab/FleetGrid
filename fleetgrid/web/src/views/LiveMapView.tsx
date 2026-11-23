@@ -15,7 +15,7 @@ export function LiveMapView() {
   const selectedTruck = trucks.find((t: Truck) => t.id === selectedTruckId) ?? trucks[0] ?? null;
 
   const activeCount = trucks.filter(
-    (t: Truck) => t.status === 'IN_TRANSIT' || (t.speedKmph !== undefined && t.speedKmph > 0),
+    (t: Truck) => t.status === 'IN_TRANSIT' || (t.speedKmph != null && t.speedKmph > 0),
   ).length;
 
   const avgSpeed =
@@ -218,7 +218,7 @@ export function LiveMapView() {
                 <div>
                   <div className="text-ink-500">COORDINATES</div>
                   <div className="mt-0.5 text-ink-200">
-                    {selectedTruck.lat.toFixed(4)}, {selectedTruck.lng.toFixed(4)}
+                    {selectedTruck.lat != null ? selectedTruck.lat.toFixed(4) : '—'}, {selectedTruck.lng != null ? selectedTruck.lng.toFixed(4) : '—'}
                   </div>
                 </div>
               </div>
