@@ -34,10 +34,10 @@ const OPTIONS: Array<{
   },
   {
     id: 'PAYMENTS',
-    label: 'Dodo Payments Hub',
-    kicker: 'Escrow',
-    description: 'Carrier freight settlement via Dodo Payments gateway, instant receipts & audit ledger.',
-    points: ['Dodo live checkout', 'Instant escrow release', 'Verifiable crypt receipts'],
+    label: 'Payments Hub',
+    kicker: 'Demo payments',
+    description: 'Review shipper payment records and simulate settlement for driver-confirmed shipments. No real money is moved.',
+    points: ['Server-validated payment records', 'Explicit demo settlement', 'Auditable payment events'],
   },
   {
     id: 'BUSINESS',
