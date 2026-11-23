@@ -3,7 +3,7 @@ import { ApiError } from '../lib/errors.js';
 import { canonicalLocation } from '../lib/geo.js';
 import { nowIso, round } from '../lib/ids.js';
 import { runExclusive } from '../lib/mutex.js';
-import { reserveCapacity, syncOfferForTruck } from './capacity.js';
+import { isBookableCapacityOffer, reserveCapacity, syncOfferForTruck } from './capacity.js';
 import { assertTransition, recordEvent } from './events.js';
 import { hub } from './realtime.js';
 import { transitionTruck } from './trucks.js';
@@ -114,6 +114,9 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
     const offer = input.capacityOfferId ? await db.capacityOffers.findById(input.capacityOfferId) : undefined;
     if (input.capacityOfferId && !offer) {
       throw ApiError.notFound(`Capacity offer ${input.capacityOfferId} does not exist.`);
+    }
+    if (offer && !isBookableCapacityOffer(offer)) {
+      throw ApiError.conflict('This legacy capacity offer has incomplete route or pricing data and cannot be booked. Choose a fully published offer.');
     }
 
     const shipment: Shipment = {
