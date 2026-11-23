@@ -17,6 +17,7 @@ on:
     branches: [main, 'upgrade/**', 'integration/**']
     paths:
       - 'fleetgrid/**'
+      - 'backend/**'
       - 'package.json'
       - 'render.yaml'
       - '.github/workflows/fleetgrid-checks.yml'
