@@ -218,7 +218,7 @@ export interface RecoveryPlan {
   updatedAt: string;
 }
 
-/** Placeholder only — real payment provider lands in a later phase (Dodo Payments). */
+/** A FleetGrid payment record. The current UI uses a demo simulator; it is not a real-money settlement. */
 export interface Payment {
   id: string;
   shipmentId: string | null;
