@@ -59,7 +59,7 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://ember-beryl-phi.vercel.app,https://fleetgrid-app.onrender.com"
       - key: DB_POOL_SIZE
         value: "3"
       - key: DB_MAX_OVERFLOW
