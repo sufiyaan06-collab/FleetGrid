@@ -200,7 +200,7 @@ export function LiveMapView() {
                 <div>
                   <div className="text-ink-500">LANE</div>
                   <div className="mt-0.5 text-ink-200">
-                    {selectedTruck.origin} → {selectedTruck.destination}
+                    {selectedTruck.origin ?? 'Route not recorded'} → {selectedTruck.destination ?? 'Route not recorded'}
                   </div>
                 </div>
                 <div>
