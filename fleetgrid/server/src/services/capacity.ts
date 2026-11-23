@@ -13,8 +13,10 @@ export interface CapacitySearchInput {
   minAvailableT?: number;
 }
 
+type BookableCapacityOffer = CapacityOffer & { origin: string; destination: string; pricePerT: number };
+
 export interface CapacityMatch {
-  offer: CapacityOffer;
+  offer: BookableCapacityOffer;
   truck: Truck;
   driverName: string | null;
   route: string;
@@ -78,6 +80,8 @@ export async function searchCapacity(input: CapacitySearchInput): Promise<Capaci
   const matches: CapacityMatch[] = [];
 
   for (const offer of offers) {
+    // Incomplete legacy offers remain stored but are not bookable until their route and price are known.
+    if (!offer.origin || !offer.destination || offer.pricePerT == null || !Number.isFinite(offer.pricePerT)) continue;
     const truck = trucks.find((t) => t.id === offer.truckId);
     if (!truck) continue;
 
@@ -305,6 +309,7 @@ export async function suggestNearbyCapacity(input: {
   const selectedTruck = trucks.find((t) => t.id === input.truckId) ?? null;
 
   const decorate = (offer: CapacityOffer): CapacityMatch | null => {
+    if (!offer.origin || !offer.destination || offer.pricePerT == null || !Number.isFinite(offer.pricePerT)) return null;
     const truck = trucks.find((t) => t.id === offer.truckId);
     if (!truck) return null;
     const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
