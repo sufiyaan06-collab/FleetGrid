@@ -4,7 +4,6 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hashPassword, hashOpaqueToken, issueSessionToken, issueVerificationToken } from '../src/services/authSecurity.js';
-import { Webhook } from 'standardwebhooks';
 
 const dataDir = await mkdtemp(join(tmpdir(), 'fleetgrid-auth-'));
 const port = 4317 + Math.floor(Math.random() * 300);
@@ -31,7 +30,6 @@ const tokenB = issueSessionToken();
 const tokenDriver = issueSessionToken();
 const tokenSuspended = issueSessionToken();
 const verificationToken = issueVerificationToken();
-const webhookSecret = `whsec_${Buffer.from('FleetGrid webhook integration secret').toString('base64')}`;
 const passwordHash = await hashPassword(password);
 const accounts = [
   { id: 'user_a', email: 'a@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenA.tokenHash, sessionExpiresAt: tokenA.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
@@ -60,10 +58,7 @@ for (const [name, rows] of Object.entries({
     { id: 'offer_a', truckId: 'truck_a', availableT: 5, route: 'A → B', origin: 'A', destination: 'B', pricePerT: 100, departureAt: null, status: 'OPEN', createdAt: now, updatedAt: now },
     { id: 'offer_other', truckId: 'truck_other', availableT: 5, route: 'C → D', origin: 'C', destination: 'D', pricePerT: 100, departureAt: null, status: 'OPEN', createdAt: now, updatedAt: now },
   ], 'incidents.json': [], 'recovery-plans.json': [],
-  'payments.json': [
-    { id: 'payment_a', shipmentId: 'shipment_a', recoveryPlanId: null, provider: 'Dodo Payments', amount: 100, currency: 'INR', status: 'PENDING', providerReference: 'session_a', providerPaymentId: null, checkoutUrl: 'https://checkout.example.test/session_a', customerName: 'Shipper A User', customerEmail: 'a@example.test', paymentMethod: 'DODO_CHECKOUT', createdAt: now, updatedAt: now },
-    { id: 'payment_b', shipmentId: 'shipment_b', recoveryPlanId: null, provider: 'Dodo Payments', amount: 100, currency: 'INR', status: 'PENDING', providerReference: 'session_b', providerPaymentId: null, checkoutUrl: 'https://checkout.example.test/session_b', customerName: 'Shipper B User', customerEmail: 'b@example.test', paymentMethod: 'DODO_CHECKOUT', createdAt: now, updatedAt: now },
-  ], 'shipment-events.json': [], 'notifications.json': [],
+  'payments.json': [], 'shipment-events.json': [], 'notifications.json': [],
 })) {
   await writeFile(join(dataDir, name), JSON.stringify(rows), 'utf8');
 }
@@ -254,157 +249,43 @@ try {
 
 
   const driverPaymentIntent = await request('/payments/dodo/checkout', {
-    method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR' }),
   });
-  assert.equal(driverPaymentIntent.status, 403, 'drivers cannot create payment intents');
+  assert.equal(driverPaymentIntent.status, 410, 'Dodo shipment checkout is disabled for every role');
 
   const dodoStatus = await request('/payments/dodo/status', {
     headers: { cookie: `fleetgrid_session=${tokenB.token}` },
   });
-  assert.equal(dodoStatus.status, 200, 'authenticated shipper can inspect Dodo readiness');
-  const dodoStatusBody = await dodoStatus.json() as { ready: boolean; configured: Record<string, boolean> };
-  assert.equal(dodoStatusBody.ready, false, 'Dodo remains disabled without the merchant configuration');
-  assert.equal('apiKey' in dodoStatusBody, false, 'provider readiness never exposes API credentials');
+  assert.equal(dodoStatus.status, 410, 'Dodo readiness endpoint is retired');
 
-  const draftShipmentCheckout = await request('/payments/dodo/checkout', {
+  const shipperDodoCheckout = await request('/payments/dodo/checkout', {
     method: 'POST',
     headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR' }),
   });
-  assert.equal(draftShipmentCheckout.status, 409, 'checkout is blocked until the driver confirms the shipment');
+  assert.equal(shipperDodoCheckout.status, 410, 'Dodo cannot initiate a real shipment payment');
 
   const browserPaymentConfirm = await request('/payments/dodo/confirm', {
     method: 'POST',
     headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ paymentId: 'forged', providerReference: 'forged' }),
   });
-  assert.equal(browserPaymentConfirm.status, 409, 'browser requests cannot mark a payment as settled');
+  assert.equal(browserPaymentConfirm.status, 410, 'Dodo browser confirmation is disabled');
 
-  const invalidDodoWebhook = await request('/payments/dodo/webhook', {
+  const disabledDodoWebhook = await request('/payments/dodo/webhook', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ type: 'payment.succeeded', data: {} }),
   });
-  assert.equal(invalidDodoWebhook.status, 401, 'unsigned Dodo webhook requests are rejected');
+  assert.equal(disabledDodoWebhook.status, 410, 'Dodo webhook cannot settle FleetGrid payments');
 
-  const unpricedShipmentCheckout = await request('/payments/dodo/checkout', {
-    method: 'POST',
-    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ shipmentId: 'shipment_zero_price', amount: 100, currency: 'INR' }),
+  const paymentsAfterDisabledProvider = await request('/payments', {
+    headers: { cookie: `fleetgrid_session=${tokenA.token}` },
   });
-  assert.equal(unpricedShipmentCheckout.status, 400, 'checkout rejects shipments without a recorded positive price');
-
-  const invalidCurrencyCheckout = await request('/payments/dodo/checkout', {
-    method: 'POST',
-    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ shipmentId: 'shipment_bad_currency', amount: 100, currency: 'INR' }),
-  });
-  assert.equal(invalidCurrencyCheckout.status, 400, 'checkout rejects invalid shipment currency codes');
-
-  const crossShipperPaymentIntent = await request('/payments/create', {
-    method: 'POST', headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ shipmentId: 'shipment_b', amount: 100, currency: 'INR' }),
-  });
-  assert.ok([403, 404].includes(crossShipperPaymentIntent.status), 'cross-shipper payment intent request is denied without creating checkout');
-
-  const driverProofAnchor = await request('/proof/anchor', {
-    method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ shipmentId: 'shipment_a' }),
-  });
-  assert.equal(driverProofAnchor.status, 403, 'drivers cannot invoke operations blockchain proof anchoring');
-
-
-  const duplicatePendingCheckout = await request('/payments/dodo/checkout', {
-    method: 'POST',
-    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR', customerName: 'Shipper A User', customerEmail: 'a@example.test' }),
-  });
-  assert.equal(duplicatePendingCheckout.status, 409, 'a shipment cannot create a second active checkout session');
-
-  const webhookPayload = JSON.stringify({
-    business_id: 'dodo_test_business',
-    data: {
-      payment_id: 'dodo_payment_001',
-      checkout_session_id: 'session_a',
-      currency: 'INR',
-      payment_method: 'upi',
-      status: 'succeeded',
-      total_amount: 10000,
-      tax: 0,
-      metadata: { fleetgrid_payment_id: 'payment_a', fleetgrid_shipment_id: 'shipment_a' },
-    },
-    timestamp: now,
-    type: 'payment.succeeded',
-  });
-  const webhookId = 'msg_fleetgrid_test_001';
-  const webhookTimestamp = String(Math.floor(Date.now() / 1000));
-  const signer = new Webhook(webhookSecret);
-  const webhookSignature = signer.sign(webhookId, new Date(Number(webhookTimestamp) * 1000), webhookPayload);
-  const invalidWebhook = await request('/payments/dodo/webhook', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'webhook-id': webhookId,
-      'webhook-timestamp': webhookTimestamp,
-      'webhook-signature': 'v1,invalid-signature',
-    },
-    body: webhookPayload,
-  });
-  assert.equal(invalidWebhook.status, 401, 'unsigned or forged Dodo webhook cannot settle a payment');
-  const validWebhookRequest = {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'webhook-id': webhookId,
-      'webhook-timestamp': webhookTimestamp,
-      'webhook-signature': webhookSignature,
-    },
-    body: webhookPayload,
-  } satisfies RequestInit;
-  const validWebhook = await request('/payments/dodo/webhook', validWebhookRequest);
-  assert.equal(validWebhook.status, 200, 'valid signed Dodo payment webhook is accepted without a user session');
-  const paymentListAfterWebhook = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
-  const paymentListData = await paymentListAfterWebhook.json() as { payments: Array<{ id: string; status: string; providerPaymentId?: string | null }> };
-  const settledPayment = paymentListData.payments.find((payment) => payment.id === 'payment_a');
-  assert.equal(settledPayment?.status, 'PAID', 'verified provider webhook settles the matching local payment');
-  assert.equal(settledPayment?.providerPaymentId, 'dodo_payment_001', 'provider payment id is stored separately from the checkout session id');
-  const duplicatePaidCheckout = await request('/payments/dodo/checkout', {
-    method: 'POST',
-    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR', customerName: 'Shipper A User', customerEmail: 'a@example.test' }),
-  });
-  assert.equal(duplicatePaidCheckout.status, 409, 'a shipment that is already paid cannot be charged again');
-
-  const duplicateWebhook = await request('/payments/dodo/webhook', validWebhookRequest);
-  assert.equal(duplicateWebhook.status, 200, 'duplicate signed webhook is acknowledged idempotently');
-  const stateAfterPayment = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
-  const stateAfterPaymentData = await stateAfterPayment.json() as { shipments: Array<{ id: string; status: string }> };
-  assert.equal(stateAfterPaymentData.shipments.find((shipment) => shipment.id === 'shipment_a')?.status, 'DRAFT', 'payment settlement does not bypass driver shipment acceptance');
-  const failedPayload = JSON.stringify({
-    business_id: 'dodo_test_business',
-    data: { payment_id: 'dodo_payment_002', checkout_session_id: 'session_b', currency: 'INR', payment_method: 'card', status: 'failed' },
-    timestamp: now,
-    type: 'payment.failed',
-  });
-  const failedWebhookId = 'msg_fleetgrid_test_002';
-  const failedWebhookTimestamp = String(Math.floor(Date.now() / 1000));
-  const failedWebhookSignature = signer.sign(failedWebhookId, new Date(Number(failedWebhookTimestamp) * 1000), failedPayload);
-  const failedWebhook = await request('/payments/dodo/webhook', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'webhook-id': failedWebhookId,
-      'webhook-timestamp': failedWebhookTimestamp,
-      'webhook-signature': failedWebhookSignature,
-    },
-    body: failedPayload,
-  });
-  assert.equal(failedWebhook.status, 200, 'valid signed Dodo failure event is accepted');
-  const shipperBPayments = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenB.token}` } });
-  const shipperBPaymentData = await shipperBPayments.json() as { payments: Array<{ id: string; status: string }> };
-  assert.equal(shipperBPaymentData.payments.find((payment) => payment.id === 'payment_b')?.status, 'FAILED', 'verified provider failure updates only its matching payment');
-
+  const paymentsAfterDisabledProviderBody = await paymentsAfterDisabledProvider.json() as { payments: unknown[] };
+  assert.equal(paymentsAfterDisabledProviderBody.payments.length, 0, 'disabled Dodo requests create no payment records');
 
   const driverPayments = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(driverPayments.status, 200);
