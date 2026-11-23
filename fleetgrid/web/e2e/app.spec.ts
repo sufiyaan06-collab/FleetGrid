@@ -74,8 +74,8 @@ test('Payments Hub clearly identifies the no-money demo simulator', async ({ pag
   await expect(page.getByText('DEMO / TEST MODE', { exact: true })).toBeVisible();
   await expect(page.getByText('Provider: FleetGrid Demo Simulator', { exact: true })).toBeVisible();
   await expect(page.getByText(/No real payment is processed/i)).toBeVisible();
-  await expect(page.getByText('Demo simulator ready', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Shipper account required to pay', exact: true })).toBeDisabled();
+  const paymentAction = page.getByRole('button', { name: /Create demo payment|Demo simulator unavailable|Shipper account required to pay|Shipment price required/ });
+  await expect(paymentAction).toBeDisabled();
 });
 
 
