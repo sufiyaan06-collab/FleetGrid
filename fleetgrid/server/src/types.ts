@@ -70,7 +70,7 @@ export interface Organization {
   name: string;
   type: OrganizationType;
   status: OrganizationStatus;
-  createdAt: string;
+  createdAt: string | null;
 }
 
 /** Private authentication record. Never include this collection in API snapshots. */
@@ -105,10 +105,10 @@ export interface Driver {
   organizationId: string;
   userId: string;
   name: string;
-  phone: string;
+  phone: string | null;
   assignedTruckId: string | null;
   status: 'AVAILABLE' | 'ON_JOURNEY' | 'OFF_DUTY';
-  createdAt: string;
+  createdAt: string | null;
 }
 
 export interface Truck {
@@ -126,7 +126,7 @@ export interface Truck {
   destination: string;
   departureAt: string | null;
   driverId: string | null;
-  createdAt: string;
+  createdAt: string | null;
 }
 
 export interface Shipment {
@@ -156,9 +156,9 @@ export interface CapacityOffer {
   availableT: number;
   departureAt: string | null;
   status: CapacityOfferStatus;
-  priceRule: string;
-  pricePerT: number;
-  updatedAt: string;
+  priceRule: string | null;
+  pricePerT: number | null;
+  updatedAt: string | null;
 }
 
 export interface Incident {
