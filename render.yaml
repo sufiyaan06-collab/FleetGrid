@@ -35,10 +35,9 @@ services:
         value: https://fleetgrid-app.onrender.com
       - key: CORS_ORIGIN
         value: "https://ember-beryl-phi.vercel.app,https://fleetgrid-app.onrender.com"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: fleetgrid-db
-          property: connectionString
+      # Do not attach fleetgrid-db here: it is the legacy relational database
+      # still used by the Python service. Configure a separate Node PostgreSQL
+      # target manually only after backup/restore and migration gates are approved.
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 
