@@ -39,7 +39,7 @@ const accounts = [
   { id: 'verify_user', email: 'verify@example.test', passwordHash, emailVerifiedAt: null, verificationTokenHash: verificationToken.tokenHash, verificationExpiresAt: verificationToken.expiresAt, sessionTokenHash: null, sessionExpiresAt: null, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
 ];
 const shipments = [
-  { id: 'shipment_a', reference: 'A-001', cargoName: 'Private cargo A', shipperId: 'shipper_a', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
+  { id: 'shipment_a', reference: 'A-001', cargoName: 'Private cargo A', shipperId: 'shipper_a', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'CONFIRMED', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
   { id: 'shipment_b', reference: 'B-001', cargoName: 'Private cargo B', shipperId: 'shipper_b', origin: 'C', destination: 'D', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
   { id: 'shipment_zero_price', reference: 'B-002', cargoName: 'Unpriced cargo', shipperId: 'shipper_b', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'CONFIRMED', truckId: null, capacityOfferId: null, price: 0, currency: 'INR', createdAt: now, updatedAt: now },
   { id: 'shipment_bad_currency', reference: 'B-003', cargoName: 'Invalid currency cargo', shipperId: 'shipper_b', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'CONFIRMED', truckId: null, capacityOfferId: null, price: 100, currency: 'IN', createdAt: now, updatedAt: now },
@@ -284,6 +284,104 @@ try {
   });
   const paymentsAfterDisabledProviderBody = await paymentsAfterDisabledProvider.json() as { payments: unknown[] };
   assert.equal(paymentsAfterDisabledProviderBody.payments.length, 0, 'disabled Dodo requests create no payment records');
+
+  const demoPaymentStatus = await request('/payments/demo/status', {
+    headers: { cookie: `fleetgrid_session=${tokenA.token}` },
+  });
+  assert.equal(demoPaymentStatus.status, 200, 'authenticated shipper can read demo payment readiness');
+  const demoStatusBody = await demoPaymentStatus.json() as { mode: string; realMoney: boolean; ready: boolean };
+  assert.deepEqual(demoStatusBody, {
+    provider: 'FleetGrid Demo Simulator', mode: 'DEMO_ONLY', realMoney: false, ready: true,
+  }, 'payment readiness clearly states that no real money is moved');
+
+  const driverDemoCheckout = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(driverDemoCheckout.status, 403, 'drivers cannot initiate shipper demo payments');
+
+  const crossShipperDemoCheckout = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(crossShipperDemoCheckout.status, 404, 'a shipper cannot create a payment for another shipper shipment');
+
+  const demoCheckout = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    // Deliberately spoof client amount/currency: the server must use shipment_a's stored INR 100.
+    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 1, currency: 'USD' }),
+  });
+  assert.equal(demoCheckout.status, 201, 'owner can create a demo payment for a confirmed shipment');
+  const demoCheckoutBody = await demoCheckout.json() as {
+    payment: { id: string; provider: string; amount: number; currency: string; status: string; paymentMethod: string };
+    mode: string; realMoney: boolean;
+  };
+  assert.equal(demoCheckoutBody.mode, 'DEMO_ONLY');
+  assert.equal(demoCheckoutBody.realMoney, false);
+  assert.equal(demoCheckoutBody.payment.provider, 'FleetGrid Demo Simulator');
+  assert.equal(demoCheckoutBody.payment.amount, 100, 'server ignores spoofed client amount and uses stored shipment price');
+  assert.equal(demoCheckoutBody.payment.currency, 'INR', 'server ignores spoofed client currency and uses stored shipment currency');
+  assert.equal(demoCheckoutBody.payment.status, 'PENDING', 'new demo payment starts pending');
+  assert.equal(demoCheckoutBody.payment.paymentMethod, 'DEMO_SIMULATOR');
+
+  const duplicateDemoCheckout = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(duplicateDemoCheckout.status, 409, 'duplicate active demo checkouts are prevented');
+
+  const crossShipperDemoSettle = await request(`/payments/demo/${demoCheckoutBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(crossShipperDemoSettle.status, 404, 'another shipper cannot settle the payment');
+
+  const demoSettle = await request(`/payments/demo/${demoCheckoutBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(demoSettle.status, 200, 'owner can explicitly simulate settlement');
+  const demoSettleBody = await demoSettle.json() as {
+    payment: { id: string; status: string; paymentMethod: string };
+    mode: string; realMoney: boolean;
+  };
+  assert.equal(demoSettleBody.payment.status, 'PAID');
+  assert.equal(demoSettleBody.payment.paymentMethod, 'DEMO_SIMULATED');
+  assert.equal(demoSettleBody.mode, 'DEMO_ONLY');
+  assert.equal(demoSettleBody.realMoney, false);
+
+  const repeatedDemoSettle = await request(`/payments/demo/${demoCheckoutBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(repeatedDemoSettle.status, 200, 'repeated demo settlement is idempotent');
+  const repeatedDemoSettleBody = await repeatedDemoSettle.json() as { payment: { id: string; status: string } };
+  assert.equal(repeatedDemoSettleBody.payment.id, demoCheckoutBody.payment.id);
+  assert.equal(repeatedDemoSettleBody.payment.status, 'PAID');
+
+  const secondAfterPaid = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(secondAfterPaid.status, 409, 'a paid shipment cannot be charged again in demo mode');
+
+  const shipperPaymentList = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const shipperPaymentListBody = await shipperPaymentList.json() as { payments: Array<{ id: string; amount: number }> };
+  assert.equal(shipperPaymentListBody.payments.length, 1, 'shipper can see its own demo payment');
+  assert.equal(shipperPaymentListBody.payments[0].id, demoCheckoutBody.payment.id);
+
+  const crossShipperPaymentRead = await request(`/payments/${demoCheckoutBody.payment.id}`, {
+    headers: { cookie: `fleetgrid_session=${tokenB.token}` },
+  });
+  assert.equal(crossShipperPaymentRead.status, 404, 'another shipper cannot read the payment by ID');
 
   const driverPayments = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(driverPayments.status, 200);
