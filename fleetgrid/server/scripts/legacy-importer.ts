@@ -120,6 +120,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       const role=typeof row.role==='string'?roleMap[row.role]:undefined;
       if(!role) issue(issues,row.role==='AUDITOR'?'ROLE_REQUIRES_ADMIN_REVIEW':'UNKNOWN_OR_NULL_ROLE','error','role');
       const organizationId=relationship(row.organization_id,orgs,'organizationId',false);
+      if (!organizationId) issue(issues,'USER_ORGANIZATION_MISSING','error','organization_id');
       const linkedOrg=orgs.find(org=>org.id===organizationId);
       if(organizationId && linkedOrg && ((role==='BUSINESS' && linkedOrg.type!=='SHIPPER') || (role!=='BUSINESS' && linkedOrg.type!=='FLEET_OPERATOR'))) {
         issue(issues,'USER_ORGANIZATION_ROLE_MISMATCH','error','organization_id');
