@@ -1,55 +1,20 @@
-# Dodo Payments setup for FleetGrid
+# Dodo Payments — disabled for FleetGrid shipment settlements
 
-FleetGrid uses Dodo's hosted Checkout Sessions API. Card and bank credentials stay on Dodo's hosted checkout; FleetGrid stores the shipment amount, provider session ID, and verified payment result.
+> **Do not follow the old setup instructions.** FleetGrid does not use Dodo to collect shipment payments, transfer funds to independent carriers, or provide escrow. That marketplace settlement model is not supported by the Dodo account flow previously evaluated for this project.
 
-## Dodo dashboard prerequisites
+The Dodo checkout, status, confirmation, and webhook endpoints are disabled in the current application. They return an explicit disabled response and cannot initiate or settle a FleetGrid shipment payment. Do not add Dodo API keys, product IDs, webhook secrets, or live-payment flags to Render for this workflow.
 
-1. Create a **one-time, pay-what-you-want** product in the Dodo account. The session amount override is supported only for a pay-what-you-want product.
-2. Note that product's ID and its configured base currency (for example, INR).
-3. Create a webhook endpoint pointing to:
+## Current project demonstration
 
-   `https://fleetgrid-app.onrender.com/payments/dodo/webhook`
+The Payments Hub uses the **FleetGrid Demo Simulator**:
 
-4. Subscribe to `payment.succeeded`, `payment.failed`, and `payment.cancelled`.
-5. Copy the webhook signing secret. Do not put it in Git or a chat message.
+1. A signed-in shipper selects one of their own driver-confirmed shipments.
+2. The server creates a pending payment using the agreed amount stored on that shipment.
+3. The user explicitly selects **Simulate successful demo payment**.
+4. The server validates ownership and payment state, then records an idempotent simulated settlement and audit event.
 
-## Render environment variables
+This is a project demonstration only. It does not contact a bank, card network, wallet, or payment provider. It does not move money, issue a tax invoice, or prove that a real shipment has been paid.
 
-Set these on the **FleetGrid production server service**, not the static frontend:
+## If real payments are ever required
 
-| Variable | Value |
-|---|---|
-| `DODO_PAYMENTS_API_KEY` | Dodo **test-mode** API key to start |
-| `DODO_PRODUCT_ID` | ID of the pay-what-you-want product |
-| `DODO_PRODUCT_CURRENCY` | Exact three-letter product currency, e.g. `INR` |
-| `DODO_PAYMENTS_WEBHOOK_KEY` | Signing secret for the webhook endpoint above |
-| `DODO_ENVIRONMENT` | `test_mode` |
-| `DODO_PAYMENTS_WEBHOOK_ENABLED` | `false` until the webhook test succeeds |
-| `DODO_LIVE_PAYMENTS_ENABLED` | `false` |
-| `APP_BASE_URL` | `https://fleetgrid-app.onrender.com` |
-
-Never expose the API key or webhook signing key in frontend variables (such as `VITE_*`).
-
-## Safe activation sequence
-
-1. Configure the Dodo test-mode product and signed webhook endpoint.
-2. Add the test-mode values above to the Render server environment, keeping `DODO_PAYMENTS_WEBHOOK_ENABLED=false`.
-3. Deploy the payment integration only after the production database transition and deployment plan are approved. Do not connect the new Node app to the legacy database before migration.
-4. Send a signed Dodo test webhook event and verify that the endpoint accepts its signature. This validates the webhook secret without opening checkout.
-5. After that signature check succeeds, set `DODO_PAYMENTS_WEBHOOK_ENABLED=true` in test mode. This enables test checkout creation; it does not enable live charges.
-6. Complete a Dodo test checkout using a driver-confirmed test shipment. Verify that the webhook updates the matching FleetGrid payment to `PAID`, with matching currency and amount (excluding separately reported tax), and that duplicate webhook deliveries do not create duplicate settlements.
-7. The readiness endpoint reports configuration presence, not proof that Dodo has delivered a successful test event. Keep all live settings disabled until the owner explicitly approves live charges.
-
-## Live payments
-
-Live mode is intentionally blocked unless both `DODO_ENVIRONMENT=live_mode` and `DODO_LIVE_PAYMENTS_ENABLED=true` are set. Do not enable either live setting until the owner explicitly approves live charges and the test flow has been verified.
-
-## Payment rules enforced by FleetGrid
-
-- Only the shipment's server-stored agreed price and currency are used; client-supplied totals are ignored.
-- The driver must accept the shipment before checkout is available.
-- Amounts are converted to the currency's smallest unit (paise for INR, cents for USD).
-- The Dodo product currency must match the shipment currency.
-- The webhook signature, checkout session, FleetGrid metadata, provider status, currency, and paid amount are checked before a payment is marked `PAID`.
-- Browser redirects never mark payments as paid.
-- Payment history and FleetGrid records are not substitutes for Dodo's official tax invoice.
+Treat that as a separate, future architecture and compliance decision. First establish who is the seller/merchant, who receives funds, whether a marketplace/split-settlement product is required, and whether the provider has approved that exact business model. Do not enable a provider based only on the availability of a hosted checkout API.
