@@ -86,3 +86,13 @@ FleetGrid's Payments Hub uses the **FleetGrid Demo Simulator** for the final-yea
 - No bank, card network, wallet, or payment provider is contacted. No money moves, and the record is not a tax invoice or proof of a real-world settlement.
 
 Dodo shipment checkout, status, confirmation, and webhook endpoints are disabled. Do not add Dodo API keys, product IDs, or webhook secrets for FleetGrid shipment collections. See `DODO_PAYMENTS_SETUP.md` for the deprecation notice and rationale.
+
+
+## Auxiliary Python API
+
+The FastAPI service under `backend/` is a legacy/optional service, not the primary application API or authentication authority.
+
+- Production sets `LEGACY_API_ENABLED=false`; only `/` and `/health` remain accessible. Operational routes return HTTP 410 until a separate authentication and authorization review is completed.
+- The legacy Python payment routes and dormant payment service are disabled. They cannot create payment records or accept provider webhooks.
+- Production startup does not run `alembic upgrade head` automatically. Run schema migrations manually only after a verified backup, reviewed migration plan, and explicit approval.
+- Do not enable `LEGACY_API_ENABLED=true` in production merely to make an old endpoint work; the Node application is the supported user-facing API.
