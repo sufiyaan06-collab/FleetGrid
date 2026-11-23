@@ -48,14 +48,14 @@ This addendum supersedes the earlier open-item wording where the implementation 
 
 GitHub Actions run [45287681820](https://github.com/sufiyaan06-collab/FleetGrid/actions/runs/45287681820) completed successfully for commit `af2322391c0b4a00dcfbcc1ef98e20a5d08065c6`: frontend/backend build, backend integration and safety tests, and Playwright browser integration tests all passed.
 
-The integration branch is currently 332 commits ahead of `main` and changes 72 files. It remains separate from production.
+At this intermediate snapshot the integration branch was 332 commits ahead and changed 72 files; the current comparison is recorded in the Branch reconciliation section below.
 
 ### Production facts and remaining release gates
 
 - The live Render Node service still tracks `main` with auto-deploy enabled. `main` advanced to commit `236c1e4c` at 2026-11-23 23:24:03 UTC, and Render automatically deployed that commit from 23:24:05 to 23:24:45 UTC (deployment status `live`). That commit only added a capacity-offer guard for incomplete legacy route/price data; it did **not** deploy this integration branch or its authentication, demo payment, dashboard, or PostgreSQL changes. The new instance logs still show JSON-file storage and seeding of 9 trucks/4 shipments. No legacy PostgreSQL DDL/DML was observed.
 - The existing Render PostgreSQL instance is on the Free plan and expires **2026-12-15**. Its legacy relational tables remain untouched. The Node `fleetgrid_records` table is absent; the live application has not been cut over to the new store.
 - The live app's current JSON-file storage is not durable across Render restarts. The production storage guard prevents the candidate code from silently repeating that unsafe configuration.
-- The legacy relational-to-Node importer remains read-only. Nullable legacy values still require complete domain/UI compatibility work; no importer apply path is authorized.
+- The legacy relational-to-Node importer remains read-only. The nullability pass now preserves nullable source fields and quarantines incomplete user/route data; a live preview against a read-only source snapshot, verified backup/restore, and reconciliation remain outstanding.
 - Production signup and password reset require a configured Resend API key, verified sender, and public app URL. Production email delivery has not been verified.
 - A persistent PostgreSQL target must be selected, the existing legacy database backed up and restored, and the migration/import reconciled before setting the production schema gate.
 - A clean release review and explicit approval are still required before creating a production cutover or allowing Render's `main` auto-deploy to run.
@@ -95,13 +95,13 @@ The workflow now watches `backend/**` and runs the Python tests as part of the s
 
 ### Branch reconciliation
 
-The integration branch currently compares as **408 commits ahead, 1 commit behind, and 91 changed files** relative to `main`. The one main-only commit is `236c1e4` (`fix(capacity): exclude legacy offers without route or price from booking`); the integration branch contains a stricter superset of that guard. Before a release PR is opened, this small ancestry difference should be reconciled and the final diff reviewed. No merge to `main` has occurred.
+The integration branch now compares as **410 commits ahead, 0 behind, and 91 changed files** relative to `main`. Main's capacity-guard commit `236c1e4` has been reconciled into the candidate with merge commit `76c2d92f`; the candidate tree retains the stricter bookable-offer guard. Draft PR #2 is open and GitHub reports it mergeable. PR #1 is closed as superseded because it described the retired Dodo shipment-checkout design. No merge to `main` has occurred.
 
-### Live deployment remains unchanged
+### Live deployment remains separate from the candidate
 
-The above are candidate-branch changes, not live production changes.
+The above are candidate-branch changes, not live production changes. The small main-only capacity guard commit `236c1e4` was auto-deployed to the Node service; none of the integration-branch authentication, demo payment, dashboard, or PostgreSQL changes have been deployed.
 
-- The live Node Render service still tracks `main` with auto-deploy enabled.
+- The live Node Render service still tracks `main` with auto-deploy enabled and continues to use JSON-file storage with demo-data seeding.
 - The live Python Render service also still tracks `main` with auto-deploy enabled. Its current Render service start command still runs `alembic upgrade head` before Uvicorn; the candidate Blueprint removes that automatic migration.
 - Therefore the live Python service has **not** yet received the production API gate, Dodo route shutdown, or production seed guard. The old service remains publicly reachable until a reviewed deployment/configuration change is approved.
 - The live Node service likewise has not received the new authentication or demo-payment implementation.
