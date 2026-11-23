@@ -58,6 +58,8 @@ services:
           property: connectionString
       - key: ENVIRONMENT
         value: production
+      - key: LEGACY_API_ENABLED
+        value: "false"
       - key: CORS_ORIGINS
         value: "https://ember-beryl-phi.vercel.app,https://fleetgrid-app.onrender.com"
       - key: DB_POOL_SIZE
