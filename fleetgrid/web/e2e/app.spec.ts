@@ -66,7 +66,7 @@ test.describe('FleetGrid browser and API integration', () => {
 
 test('Payments Hub clearly identifies the no-money demo simulator', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Payments Hub', exact: true }).click();
+  await page.getByRole('button', { name: /Payments Hub/ }).click();
 
   await expect(page.getByRole('heading', { name: 'FleetGrid Payments Hub' })).toBeVisible();
   await expect(page.getByText('DEMO / TEST MODE', { exact: true })).toBeVisible();
