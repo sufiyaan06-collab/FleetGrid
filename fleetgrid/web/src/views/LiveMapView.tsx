@@ -81,7 +81,7 @@ export function LiveMapView() {
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-ink-400">
-                        {truck.origin} → {truck.destination}
+                        {truck.origin ?? 'Route not recorded'} → {truck.destination ?? 'Route not recorded'}
                       </div>
                     </div>
 
