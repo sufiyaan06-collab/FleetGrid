@@ -136,7 +136,7 @@ export interface Incident {
   transcript: string;
   structuredSummary: string;
   status: IncidentStatus;
-  source: 'DRIVER_APP' | 'VOICE' | 'OPERATOR' | 'SYSTEM';
+  source: 'DRIVER_APP' | 'VOICE' | 'OPERATOR' | 'SYSTEM' | 'LEGACY_IMPORT';
   affectedShipmentIds: string[];
   recoveryPlanId: string | null;
   createdAt: string;
@@ -207,7 +207,7 @@ export interface Notification {
   recipientId: string;
   type: string;
   message: string;
-  status: 'PENDING' | 'SENT';
+  status: 'PENDING' | 'UNREAD' | 'READ' | 'SENT';
   createdAt: string;
 }
 
