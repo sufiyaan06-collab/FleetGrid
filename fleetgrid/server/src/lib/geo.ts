@@ -150,11 +150,12 @@ export type SegmentFit = 'EXACT' | 'PARTIAL' | 'NONE' | 'REVERSED' | 'UNKNOWN';
  * which this build does not serve — reported honestly rather than silently matching.
  */
 export function segmentFit(
-  truckOrigin: string,
-  truckDestination: string,
+  truckOrigin: string | null,
+  truckDestination: string | null,
   shipOrigin: string,
   shipDestination: string,
 ): SegmentFit {
+  if (!truckOrigin?.trim() || !truckDestination?.trim()) return 'NONE';
   const tFrom = corridorIndex(truckOrigin);
   const tTo = corridorIndex(truckDestination);
   const sFrom = corridorIndex(shipOrigin);
@@ -189,10 +190,11 @@ export function segmentNote(fit: SegmentFit, shipDestination: string, truckDesti
  * or an ETA (Master PRD §17: no fake routing data).
  */
 export function distanceKm(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number },
+  a: { lat: number | null; lng: number | null },
+  b: { lat: number | null; lng: number | null },
 ): number | null {
   if (
+    a.lat === null || a.lng === null || b.lat === null || b.lng === null ||
     !Number.isFinite(a.lat) ||
     !Number.isFinite(a.lng) ||
     !Number.isFinite(b.lat) ||
