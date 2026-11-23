@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { config } from '../config.js';
+import { config, isProductionEnvironment } from '../config.js';
 import { createJsonStore, dataFile, type Store } from './jsonStore.js';
 import { createPostgresStore, initializePostgres } from './postgresStore.js';
 import type {
@@ -64,6 +64,16 @@ function build(dataDir: string): Db {
   const db: Db = {
     storage: pool ? 'postgresql' : 'json-file',
     async initialize() {
+      // A Render free web service has an ephemeral filesystem. Never silently
+      // start production with JSON-file storage and lose writes on restart.
+      if (!pool && isProductionEnvironment()) {
+        throw new Error('DATABASE_URL is required in production. Refusing to start with ephemeral JSON-file storage.');
+      }
+      // The existing Render database contains legacy relational tables. Require
+      // an explicit release gate before the Node app creates its JSONB schema.
+      if (pool && isProductionEnvironment() && process.env.FLEETGRID_POSTGRES_SCHEMA_READY !== 'true') {
+        throw new Error('FLEETGRID_POSTGRES_SCHEMA_READY=true is required before initializing FleetGrid PostgreSQL storage. Verify the target database and backup first.');
+      }
       if (pool) await initializePostgres(pool);
     },
     async close() {
