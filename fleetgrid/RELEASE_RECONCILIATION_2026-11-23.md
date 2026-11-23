@@ -30,3 +30,32 @@ GitHub Actions run `45071345190` for candidate commit `3cde39e2f0a327c65f51d8b60
 5. Verify backup and restore capability before any target writes.
 6. Verify persistent storage behavior and deployment health without switching production.
 7. Review final changes and explicit production cutover approval before merging to `main`.
+
+
+## Progress addendum — 2026-11-24
+
+This addendum supersedes the earlier open-item wording where the implementation has since been completed.
+
+### Completed on the integration branch
+
+- Payment Hub now uses the FleetGrid Demo Simulator. It creates a pending record from the shipment's server-stored price, checks shipper ownership, and allows only an explicit server-side simulated settlement. Tests cover duplicate prevention, cross-shipper denial, idempotent settlement, and client-supplied amount spoofing.
+- Legacy Dodo shipment checkout, status, confirmation, and webhook routes return HTTP 410. Dodo setup instructions have been retired; no provider keys or real-money movement are required for the project demo.
+- Production storage fails closed: missing `DATABASE_URL` prevents startup, and PostgreSQL schema initialization requires `FLEETGRID_POSTGRES_SCHEMA_READY=true`.
+- JSON-to-PostgreSQL apply is blocked in production and requires explicit non-production approval flags. Production operations-account provisioning also requires explicit approval flags.
+- Account/setup docs and the root README now describe the current Node/React application, demo payments, authentication email requirements, and migration gates.
+
+### Latest verification
+
+GitHub Actions run [45287681820](https://github.com/sufiyaan06-collab/FleetGrid/actions/runs/45287681820) completed successfully for commit `af2322391c0b4a00dcfbcc1ef98e20a5d08065c6`: frontend/backend build, backend integration and safety tests, and Playwright browser integration tests all passed.
+
+The integration branch is currently 332 commits ahead of `main` and changes 72 files. It remains separate from production.
+
+### Production facts and remaining release gates
+
+- The live Render Node service still tracks `main` with auto-deploy enabled. No merge, push to `main`, or deployment has occurred.
+- The existing Render PostgreSQL instance is on the Free plan and expires **2026-12-15**. Its legacy relational tables remain untouched. The Node `fleetgrid_records` table is absent; the live application has not been cut over to the new store.
+- The live app's current JSON-file storage is not durable across Render restarts. The production storage guard prevents the candidate code from silently repeating that unsafe configuration.
+- The legacy relational-to-Node importer remains read-only. Nullable legacy values still require complete domain/UI compatibility work; no importer apply path is authorized.
+- Production signup and password reset require a configured Resend API key, verified sender, and public app URL. Production email delivery has not been verified.
+- A persistent PostgreSQL target must be selected, the existing legacy database backed up and restored, and the migration/import reconciled before setting the production schema gate.
+- A clean release review and explicit approval are still required before creating a production cutover or allowing Render's `main` auto-deploy to run.
