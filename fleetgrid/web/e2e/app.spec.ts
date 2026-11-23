@@ -64,6 +64,19 @@ test.describe('FleetGrid browser and API integration', () => {
 });
 
 
+test('Payments Hub clearly identifies the no-money demo simulator', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Payments Hub', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: 'FleetGrid Payments Hub' })).toBeVisible();
+  await expect(page.getByText('DEMO / TEST MODE', { exact: true })).toBeVisible();
+  await expect(page.getByText('Provider: FleetGrid Demo Simulator', { exact: true })).toBeVisible();
+  await expect(page.getByText(/No real payment is processed/i)).toBeVisible();
+  await expect(page.getByText('Demo simulator ready', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Shipper account required to pay', exact: true })).toBeDisabled();
+});
+
+
 test('operational dashboards hydrate from backend snapshots and preserve role navigation', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Enter Control Tower', exact: true }).click();
