@@ -95,7 +95,7 @@ The workflow now watches `backend/**` and runs the Python tests as part of the s
 
 ### Branch reconciliation
 
-The integration branch currently compares as **407 commits ahead, 1 commit behind, and 91 changed files** relative to `main`. The one main-only commit is `236c1e4` (`fix(capacity): exclude legacy offers without route or price from booking`); the integration branch contains a stricter superset of that guard. Before a release PR is opened, this small ancestry difference should be reconciled and the final diff reviewed. No merge to `main` has occurred.
+The integration branch currently compares as **408 commits ahead, 1 commit behind, and 91 changed files** relative to `main`. The one main-only commit is `236c1e4` (`fix(capacity): exclude legacy offers without route or price from booking`); the integration branch contains a stricter superset of that guard. Before a release PR is opened, this small ancestry difference should be reconciled and the final diff reviewed. No merge to `main` has occurred.
 
 ### Live deployment remains unchanged
 
