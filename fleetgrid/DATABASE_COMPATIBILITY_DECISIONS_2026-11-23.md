@@ -132,3 +132,16 @@ These rules are subject to confirmation against live information_schema nullabil
 - The importer validates the complete reviewed source-column contract and emits the live source nullability/default metadata in its sanitized preview. Any missing reviewed column aborts the preview.
 - A strict route parse failure is a warning: preserve the raw route in the private in-memory audit envelope and map parsed origin/destination as null.
 - A capacity price rule is converted only for the explicit INR-per-ton grammar. Other price rules remain null with a warning.
+
+
+## 11. Production persistence startup gate
+
+The Node application now fails closed in a production environment when `DATABASE_URL` is absent. It will not silently fall back to JSON files on a host whose filesystem is ephemeral.
+
+When `DATABASE_URL` is present in production, the app also requires:
+
+- `FLEETGRID_POSTGRES_SCHEMA_READY=true`
+
+This is an explicit release gate before the Node app runs `CREATE TABLE/INDEX IF NOT EXISTS` against the selected database. Do not set it until the database has been identified as the intended target, the source backup/restore plan is verified, and the import/cutover procedure is approved. Development and isolated test runs continue to use the JSON-file adapter when no database URL is configured.
+
+The current Render free PostgreSQL instance is time-limited and is not a durable long-term production choice. Select and verify a persistent target before the existing database expires; no new provider or paid resource is authorized by this decision record.
