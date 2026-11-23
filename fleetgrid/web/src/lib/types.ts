@@ -54,7 +54,7 @@ export interface Organization {
   name: string;
   type: 'SHIPPER' | 'FLEET_OPERATOR';
   status: 'ACTIVE' | 'SUSPENDED';
-  createdAt: string;
+  createdAt: string | null;
 }
 
 export interface User {
@@ -71,10 +71,10 @@ export interface Driver {
   organizationId: string;
   userId: string;
   name: string;
-  phone: string;
+  phone: string | null;
   assignedTruckId: string | null;
   status: 'AVAILABLE' | 'ON_JOURNEY' | 'OFF_DUTY';
-  createdAt: string;
+  createdAt: string | null;
 }
 
 export interface Truck {
@@ -92,7 +92,7 @@ export interface Truck {
   destination: string;
   departureAt: string | null;
   driverId: string | null;
-  createdAt: string;
+  createdAt: string | null;
 }
 
 export interface Shipment {
@@ -122,9 +122,9 @@ export interface CapacityOffer {
   availableT: number;
   departureAt: string | null;
   status: 'OPEN' | 'HELD' | 'CLOSED';
-  priceRule: string;
-  pricePerT: number;
-  updatedAt: string;
+  priceRule: string | null;
+  pricePerT: number | null;
+  updatedAt: string | null;
 }
 
 export interface Incident {
