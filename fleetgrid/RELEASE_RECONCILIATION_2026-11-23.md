@@ -52,7 +52,7 @@ The integration branch is currently 332 commits ahead of `main` and changes 72 f
 
 ### Production facts and remaining release gates
 
-- The live Render Node service still tracks `main` with auto-deploy enabled. No merge, push to `main`, or deployment has occurred.
+- The live Render Node service still tracks `main` with auto-deploy enabled. `main` advanced to commit `236c1e4c` at 2026-11-23 23:24:03 UTC, and Render automatically deployed that commit from 23:24:05 to 23:24:45 UTC (deployment status `live`). That commit only added a capacity-offer guard for incomplete legacy route/price data; it did **not** deploy this integration branch or its authentication, demo payment, dashboard, or PostgreSQL changes. The new instance logs still show JSON-file storage and seeding of 9 trucks/4 shipments. No legacy PostgreSQL DDL/DML was observed.
 - The existing Render PostgreSQL instance is on the Free plan and expires **2026-12-15**. Its legacy relational tables remain untouched. The Node `fleetgrid_records` table is absent; the live application has not been cut over to the new store.
 - The live app's current JSON-file storage is not durable across Render restarts. The production storage guard prevents the candidate code from silently repeating that unsafe configuration.
 - The legacy relational-to-Node importer remains read-only. Nullable legacy values still require complete domain/UI compatibility work; no importer apply path is authorized.
