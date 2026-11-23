@@ -22,7 +22,7 @@ This keeps valid organizations, users, drivers, trucks and offers usable by the 
 | Entity / field | Final decision |
 |---|---|
 | Organization createdAt | Nullable. Legacy Organization has no creation column. Never substitute import time. |
-| User organizationId and contact | Nullable. A user without an organization remains unassigned and gets no organization-scoped access until explicitly linked by an administrator. |
+| User organizationId and contact | `organizationId` is required for an active Node User. If the legacy organization link is null or invalid, quarantine the user record and leave it in the legacy source until an administrator assigns a valid organization; never invent a default tenant. `contact` remains nullable. |
 | User email / credentials | Email stays private auth data only. Do not copy email into public User. Legacy passwords/sessions are incompatible; migrated users require invitation/account recovery and new verified credentials. |
 | Driver name | Join drivers.user_id to users.id and copy linked user's name only after identity/FK validation. |
 | Driver phone and createdAt | Nullable; no trustworthy source field exists. |
@@ -90,7 +90,7 @@ A quarantined AUDITOR identity cannot authenticate. It can be recovered only thr
 - Do not migrate legacy password hashes, sessions, email verification, lockout counters, or reset tokens.
 - Do not expose legacy emails, phone numbers, payment references, or raw payloads in public snapshots or dry-run console output.
 - Migrated users remain non-authenticating until a secure invitation/account-recovery flow creates a new AuthAccount and verifies email.
-- Organization-less users remain unassigned and have no tenant-scoped permissions.
+- Organization-less users are quarantined from active Node collections until an administrator assigns a valid organization; their source rows remain untouched.
 - AUDITOR rows remain quarantined and cannot log in.
 
 ## 8. Importer acceptance gates
@@ -145,3 +145,8 @@ When `DATABASE_URL` is present in production, the app also requires:
 This is an explicit release gate before the Node app runs `CREATE TABLE/INDEX IF NOT EXISTS` against the selected database. Do not set it until the database has been identified as the intended target, the source backup/restore plan is verified, and the import/cutover procedure is approved. Development and isolated test runs continue to use the JSON-file adapter when no database URL is configured.
 
 The current Render free PostgreSQL instance is time-limited and is not a durable long-term production choice. Select and verify a persistent target before the existing database expires; no new provider or paid resource is authorized by this decision record.
+
+
+### 2026-11-24 clarification — organization-less legacy users
+
+The dry-run mapper now quarantines any legacy user with a missing/invalid organization link using `USER_ORGANIZATION_MISSING` or the relationship error. This supersedes the earlier idea of importing an active user with a nullable organization ID: every active Node User must have a tenant. The current database's single organization-less user is an `AUDITOR` and is independently quarantined for role review. No identity, role, or tenant is fabricated.
