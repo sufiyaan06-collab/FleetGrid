@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
-import { getPayment, listPayments } from '../services/payments.js';
+import { getPayment, listPayments } from '../services/paymentRecords.js';
 import { createDemoPayment, settleDemoPayment } from '../services/demoPayments.js';
 import { db } from '../store/db.js';
 import { requireAuthenticated, requireRoles } from '../middleware/auth.js';
