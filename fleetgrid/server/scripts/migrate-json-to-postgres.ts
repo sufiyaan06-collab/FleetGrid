@@ -43,7 +43,20 @@ async function loadCollection(filePath: string): Promise<MigrationRow[]> {
 
 const sourceDir = resolve(process.env.DATA_DIR ?? resolve(process.cwd(), 'data'));
 const apply = process.argv.includes('--apply');
+const production = process.env.NODE_ENV === 'production'
+  || process.env.RENDER === 'true'
+  || Boolean(process.env.RENDER_SERVICE_ID);
 const connectionString = process.env.DATABASE_URL;
+
+if (apply && production) {
+  throw new Error('JSON-to-Postgres apply is blocked in production. Use the separately reviewed production migration procedure.');
+}
+if (apply && process.env.FLEETGRID_ALLOW_JSON_IMPORT !== 'true') {
+  throw new Error('Set FLEETGRID_ALLOW_JSON_IMPORT=true only after reviewing the exact target and verified backup.');
+}
+if (apply && !process.argv.includes('--confirm-target')) {
+  throw new Error('Pass --confirm-target together with --apply to confirm the explicitly reviewed empty target.');
+}
 
 if (!connectionString) {
   throw new Error('DATABASE_URL is required. This script never guesses a database target.');
@@ -92,7 +105,7 @@ process.stdout.write(`Total: ${total} records\n`);
 const pool = new Pool({
   connectionString,
   max: 2,
-  ...(process.env.PGSSLMODE === 'require' ? { ssl: { rejectUnauthorized: false } } : {}),
+  ...(process.env.PGSSLMODE === 'require' ? { ssl: { rejectUnauthorized: true } } : {}),
 });
 
 try {
@@ -109,7 +122,7 @@ try {
   }
 
   if (!apply) {
-    process.stdout.write('DRY RUN ONLY: target table is absent or empty and source data passed validation. No database schema or records were changed. Re-run with --apply to import.\n');
+    process.stdout.write('DRY RUN ONLY: target table is absent or empty and source data passed validation. No database schema or records were changed. Re-run with --apply --confirm-target and FLEETGRID_ALLOW_JSON_IMPORT=true to import to the explicitly reviewed non-production target.\n');
   } else {
     await initializePostgres(pool);
     const client = await pool.connect();
