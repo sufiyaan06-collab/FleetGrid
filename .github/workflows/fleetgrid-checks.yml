@@ -9,7 +9,7 @@ on:
       - 'render.yaml'
       - '.github/workflows/fleetgrid-checks.yml'
   push:
-    branches: [main, 'upgrade/**']
+    branches: [main, 'upgrade/**', 'integration/**']
     paths:
       - 'fleetgrid/**'
       - 'package.json'
