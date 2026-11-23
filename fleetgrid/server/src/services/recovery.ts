@@ -8,7 +8,7 @@ import { getIncident, setIncidentStatus } from './incidents.js';
 import { getShipment, releaseCapacity, setShipmentStatus } from './shipments.js';
 import { transitionTruck } from './trucks.js';
 import { isBookableCapacityOffer } from './capacity.js';
-import { RECOVERY_PLAN_TRANSITIONS, type RecoveryOption, type RecoveryPlan } from '../types.js';
+import { RECOVERY_PLAN_TRANSITIONS, type RecoveryOption, type RecoveryPlan, type Truck } from '../types.js';
 
 /**
  * Deterministic demo estimates (Master PRD §17).
