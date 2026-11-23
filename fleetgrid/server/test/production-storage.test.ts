@@ -49,4 +49,57 @@ assert.match(
   'the failure explains the schema readiness gate before any database connection',
 );
 
+
+const productionImport = spawnSync(
+  process.execPath,
+  ['--import', 'tsx', 'scripts/migrate-json-to-postgres.ts', '--apply'],
+  {
+    cwd: serverRoot,
+    encoding: 'utf8',
+    env: {
+      ...baseEnv,
+      DATABASE_URL: 'postgres://fleetgrid:invalid@127.0.0.1:1/fleetgrid',
+      FLEETGRID_ALLOW_JSON_IMPORT: 'true',
+    },
+  },
+);
+assert.notEqual(productionImport.status, 0, 'JSON import writes must be blocked in production');
+assert.match(productionImport.stderr, /JSON-to-Postgres apply is blocked in production/);
+
+const unapprovedImport = spawnSync(
+  process.execPath,
+  ['--import', 'tsx', 'scripts/migrate-json-to-postgres.ts', '--apply'],
+  {
+    cwd: serverRoot,
+    encoding: 'utf8',
+    env: {
+      ...baseEnv,
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgres://fleetgrid:invalid@127.0.0.1:1/fleetgrid',
+      FLEETGRID_ALLOW_JSON_IMPORT: '',
+    },
+  },
+);
+assert.notEqual(unapprovedImport.status, 0, 'non-production import still requires explicit approval');
+assert.match(unapprovedImport.stderr, /FLEETGRID_ALLOW_JSON_IMPORT=true/);
+
+const unapprovedOpsProvision = spawnSync(
+  process.execPath,
+  ['--import', 'tsx', 'scripts/provision-ops.ts'],
+  {
+    cwd: serverRoot,
+    encoding: 'utf8',
+    env: {
+      ...baseEnv,
+      OPS_NAME: 'Integration Operator',
+      OPS_EMAIL: 'operator@example.test',
+      OPS_PASSWORD: 'Integration-Password-2026',
+      OPS_ROLE: 'OPERATOR',
+      FLEETGRID_ALLOW_OPS_PROVISIONING: 'true',
+    },
+  },
+);
+assert.notEqual(unapprovedOpsProvision.status, 0, 'production operations provisioning requires an explicit confirmation flag');
+assert.match(unapprovedOpsProvision.stderr, /--confirm-production/);
+
 process.stdout.write('Production persistent-storage guard checks passed.\\n');
