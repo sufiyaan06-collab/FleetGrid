@@ -84,9 +84,7 @@ try {
     env: {
       ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir,
       AUTO_SEED: 'false', NODE_ENV: 'test', FLEETGRID_TEST_BYPASS_AUTH: 'false',
-      CORS_ORIGIN: base, DODO_PAYMENTS_API_KEY: '', DODO_PRODUCT_ID: '', DODO_PRODUCT_CURRENCY: '',
-      DODO_PAYMENTS_WEBHOOK_KEY: webhookSecret, DODO_PAYMENTS_WEBHOOK_ENABLED: 'false',
-      DODO_ENVIRONMENT: 'test_mode', DODO_LIVE_PAYMENTS_ENABLED: 'false', APP_BASE_URL: '',
+      CORS_ORIGIN: base, APP_BASE_URL: '',
     },
     stdio: 'ignore',
   });
