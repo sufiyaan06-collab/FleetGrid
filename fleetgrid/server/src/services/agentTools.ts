@@ -120,6 +120,10 @@ async function findCapacityForRoute(input: NearbyCapacityInput): Promise<NearbyC
 
   for (const offer of offers) {
     if (exclude.has(offer.truckId)) continue;
+    // Incomplete legacy offers remain in storage for audit, but are not candidates
+    // for operational recommendations or pricing.
+    if (!offer.origin?.trim() || !offer.destination?.trim() ||
+        offer.pricePerT === null || !Number.isFinite(offer.pricePerT) || offer.pricePerT <= 0) continue;
     const truck = trucks.find((t) => t.id === offer.truckId);
     if (!truck) continue;
     if (offer.status === 'CLOSED') continue;
