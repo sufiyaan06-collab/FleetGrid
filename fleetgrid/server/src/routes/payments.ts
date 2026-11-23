@@ -5,6 +5,7 @@ import { asyncHandler } from '../middleware/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
 import { confirmDodoPayment, createDodoCheckout, failDodoPayment, getPayment, listPayments, toDodoMinorUnits } from '../services/payments.js';
+import { createDemoPayment, settleDemoPayment } from '../services/demoPayments.js';
 import { db } from '../store/db.js';
 import { requireAuthenticated, requireRoles } from '../middleware/auth.js';
 import { requireTrustedOrigin } from '../middleware/trustedOrigin.js';
@@ -129,6 +130,34 @@ paymentsRouter.post(
 
 paymentsRouter.use(requireTrustedOrigin);
 paymentsRouter.use(requireAuthenticated);
+
+/** Clearly labelled college-demo simulator: no external provider or money movement. */
+paymentsRouter.get('/payments/demo/status', (_req, res) => {
+  res.json({ provider: 'FleetGrid Demo Simulator', mode: 'DEMO_ONLY', realMoney: false, ready: true });
+});
+
+paymentsRouter.post(
+  '/payments/demo/checkout',
+  requireRoles('BUSINESS'),
+  validateBody(z.object({ shipmentId: z.string().min(2) })),
+  asyncHandler(async (req, res) => {
+    const user = res.locals.authUser as User;
+    const { shipmentId } = req.body as { shipmentId: string };
+    const payment = await createDemoPayment(shipmentId, user);
+    res.status(201).json({ payment, mode: 'DEMO_ONLY', realMoney: false });
+  }),
+);
+
+paymentsRouter.post(
+  '/payments/demo/:id/settle',
+  requireRoles('BUSINESS'),
+  asyncHandler(async (req, res) => {
+    const user = res.locals.authUser as User;
+    const payment = await settleDemoPayment(requiredParam(req, 'id'), user);
+    res.json({ payment, mode: 'DEMO_ONLY', realMoney: false });
+  }),
+);
+
 
 const createDodoCheckoutSchema = z.object({
   shipmentId: z.string().min(2).nullish(),
