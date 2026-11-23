@@ -425,7 +425,7 @@ try {
   const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
   assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
 
-  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account, truck-list, live-location and capacity-list isolation, suspended organisation lockout, recovery preview and immutable event-log restrictions, role restrictions, signed Dodo webhook verification, idempotent settlement and duplicate checkout prevention, payment ownership, proof-anchor role restriction, driver payment privacy, logout).\\n');
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account and fleet privacy, suspended organisation lockout, recovery preview and immutable event-log restrictions, role restrictions, disabled Dodo route rejection, demo payment amount validation, shipper ownership, duplicate prevention, idempotent simulated settlement, audit events, payment privacy, proof-anchor role restriction, logout).\\n');
 } finally {
   if (server && !server.killed) server.kill('SIGTERM');
   await rm(dataDir, { recursive: true, force: true });
