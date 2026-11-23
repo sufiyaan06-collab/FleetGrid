@@ -6,6 +6,23 @@ import { hub } from './realtime.js';
 import { canonicalLocation, distanceKm, etaLabelFor, proximityLabel, segmentFit, segmentNote, type SegmentFit } from '../lib/geo.js';
 import type { CapacityOffer, Shipment, Truck } from '../types.js';
 
+export type BookableCapacityOffer = CapacityOffer & {
+  origin: string;
+  destination: string;
+  pricePerT: number;
+};
+
+/** Legacy offers with missing route/rate data remain stored but cannot be booked. */
+export function isBookableCapacityOffer(offer: CapacityOffer): offer is BookableCapacityOffer {
+  return Boolean(
+    offer.origin?.trim() &&
+    offer.destination?.trim() &&
+    offer.pricePerT !== null &&
+    Number.isFinite(offer.pricePerT) &&
+    offer.pricePerT > 0
+  );
+}
+
 export interface CapacitySearchInput {
   origin?: string;
   destination?: string;
@@ -14,7 +31,7 @@ export interface CapacitySearchInput {
 }
 
 export interface CapacityMatch {
-  offer: CapacityOffer;
+  offer: BookableCapacityOffer;
   truck: Truck;
   driverName: string | null;
   route: string;
@@ -78,6 +95,7 @@ export async function searchCapacity(input: CapacitySearchInput): Promise<Capaci
   const matches: CapacityMatch[] = [];
 
   for (const offer of offers) {
+    if (!isBookableCapacityOffer(offer)) continue;
     const truck = trucks.find((t) => t.id === offer.truckId);
     if (!truck) continue;
 
@@ -153,7 +171,7 @@ export async function findAvailableCapacity(input: CapacitySearchInput): Promise
 
 export interface SplitLeg {
   truck: Truck;
-  offer: CapacityOffer;
+  offer: BookableCapacityOffer;
   /** How much of the request this truck is being asked to carry. */
   assignedT: number;
   /** What is left on the truck after this leg. */
@@ -250,8 +268,8 @@ export async function capacityOptions(input: CapacitySearchInput): Promise<Capac
     if (usableForSplit.length === 0) {
       const offRoute = all.length === 0;
       impossible = offRoute
-        ? `No truck publishes capacity on this network right now.`
-        : `No truck covers ${request.origin ?? 'this pickup'} → ${request.destination ?? 'this drop'} with any spare capacity.`;
+        ? 'No bookable truck has a complete route and valid published rate on this network right now.'
+        : `No bookable truck covers ${request.origin ?? 'this pickup'} → ${request.destination ?? 'this drop'} with any spare capacity.`;
     } else {
       impossible = `Together the ${usableForSplit.length} truck(s) on this route only have ${round(
         usableForSplit.reduce((s, m) => s + m.truck.availableT, 0),
@@ -304,7 +322,7 @@ export async function suggestNearbyCapacity(input: {
 
   const selectedTruck = trucks.find((t) => t.id === input.truckId) ?? null;
 
-  const decorate = (offer: CapacityOffer): CapacityMatch | null => {
+  const decorate = (offer: BookableCapacityOffer): CapacityMatch | null => {
     const truck = trucks.find((t) => t.id === offer.truckId);
     if (!truck) return null;
     const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
@@ -344,10 +362,11 @@ export async function suggestNearbyCapacity(input: {
     };
   };
 
-  const selectedOffer = offers.find((o) => o.truckId === input.truckId) ?? null;
+  const selectedOffer = offers.find((o) => o.truckId === input.truckId && isBookableCapacityOffer(o));
   const selected = selectedOffer ? decorate(selectedOffer) : null;
 
   const suggestions: NearbySuggestion[] = offers
+    .filter(isBookableCapacityOffer)
     .filter((o) => o.truckId !== input.truckId)
     .map(decorate)
     .filter((m): m is CapacityMatch => m !== null)
