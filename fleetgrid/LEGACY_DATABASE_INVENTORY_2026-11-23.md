@@ -98,3 +98,16 @@ A second read-only query against the current Render PostgreSQL database inspecte
 - **notifications:** `status` and `created_at` are nullable.
 
 This confirms that ORM defaults cannot be treated as stored historical values. The compatibility decision record remains authoritative. The Node `fleetgrid_records` table is still absent, and this inspection performed no DDL or DML.
+
+
+## Aggregate nullability checks — 2026-11-24
+
+Additional read-only aggregate queries returned counts only:
+
+- Users: 4 total; 1 has no organization assignment and is the legacy `AUDITOR` role (already quarantined by the importer); 0 have null contact or `created_at`.
+- Organizations: 3 total; 0 have null status.
+- Drivers: 1 total; 0 have null assigned-truck or status.
+- Trucks: 3 total; 0 have null latitude/longitude, route endpoints, or departure time.
+- Capacity offers: 1 total; status and price rule are present; route and INR-per-ton price parse under the importer's strict parser.
+
+This means the currently inventoried operational rows do not exercise every nullable column permitted by the SQL schema. The importer must still preserve nulls safely for future records; the active application now treats incomplete capacity offers as stored-but-not-bookable. No row values were retrieved.
