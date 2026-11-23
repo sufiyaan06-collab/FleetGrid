@@ -74,7 +74,7 @@ The integration branch is currently 332 commits ahead of `main` and changes 72 f
 
 ### Latest candidate verification
 
-GitHub Actions run [45290569896](https://github.com/sufiyaan06-collab/FleetGrid/actions/runs/45290569896) completed successfully for commit `f08acc956ee314dd1f9d12b5b83b2dd758e5d2b4`. It passed:
+GitHub Actions run [45290742448](https://github.com/sufiyaan06-collab/FleetGrid/actions/runs/45290742448) completed successfully for commit `6e1e55ea6de5db7c8fe4379b0bf82f1022f1450e`. It passed:
 - React/Vite and Node/Express build.
 - Node backend integration and safety tests.
 - Python FastAPI backend tests.
@@ -95,7 +95,7 @@ The workflow now watches `backend/**` and runs the Python tests as part of the s
 
 ### Branch reconciliation
 
-The integration branch currently compares as **402 commits ahead, 1 commit behind, and 91 changed files** relative to `main`. The one main-only commit is `236c1e4` (`fix(capacity): exclude legacy offers without route or price from booking`); the integration branch contains a stricter superset of that guard. Before a release PR is opened, this small ancestry difference should be reconciled and the final diff reviewed. No merge to `main` has occurred.
+The integration branch currently compares as **407 commits ahead, 1 commit behind, and 91 changed files** relative to `main`. The one main-only commit is `236c1e4` (`fix(capacity): exclude legacy offers without route or price from booking`); the integration branch contains a stricter superset of that guard. Before a release PR is opened, this small ancestry difference should be reconciled and the final diff reviewed. No merge to `main` has occurred.
 
 ### Live deployment remains unchanged
 
