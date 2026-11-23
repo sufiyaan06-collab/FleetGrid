@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - 'fleetgrid/**'
+      - 'backend/**'
       - 'package.json'
       - 'render.yaml'
       - '.github/workflows/fleetgrid-checks.yml'
@@ -48,6 +49,16 @@ jobs:
           done
           cat /tmp/fleetgrid-server.log
           exit 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Python backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Run Python backend tests
+        run: pytest -q backend/tests
       - name: Run frontend browser integration tests
         run: |
           cd fleetgrid/web
