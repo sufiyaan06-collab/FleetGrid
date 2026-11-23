@@ -84,12 +84,12 @@ export interface Truck {
   capacityT: number;
   availableT: number;
   status: TruckStatus;
-  lat: number;
-  lng: number;
-  speedKmph?: number;
-  heading?: number;
-  origin: string;
-  destination: string;
+  lat: number | null;
+  lng: number | null;
+  speedKmph?: number | null;
+  heading?: number | null;
+  origin: string | null;
+  destination: string | null;
   departureAt: string | null;
   driverId: string | null;
   createdAt: string | null;
@@ -116,7 +116,7 @@ export interface Shipment {
 export interface CapacityOffer {
   id: string;
   truckId: string;
-  route: string;
+  route: string | null;
   origin: string | null;
   destination: string | null;
   availableT: number;
