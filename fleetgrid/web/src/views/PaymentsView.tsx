@@ -122,9 +122,9 @@ export function PaymentsView() {
 
         {/* Top Operational Metrics */}
         <div className="panel grid grid-cols-2 divide-x divide-base-600 sm:grid-cols-4">
-          <Metric label={`Total Paid (${currency})`} value={formatMoney(totalSettled, currency)} tone="healthy" hint="Simulated demo records only" />
-          <Metric label="Paid Invoices" value={paidCount} tone="accent" hint="Provider-confirmed receipts" />
-          <Metric label="Awaiting Payment" value={pendingCount} tone="warn" hint="Active reservations" />
+          <Metric label={`Demo Settled (${currency})`} value={formatMoney(totalSettled, currency)} tone="healthy" hint="Simulated demo records only" />
+          <Metric label="Settled Demo Records" value={paidCount} tone="accent" hint="Provider-confirmed receipts" />
+          <Metric label="Pending Demo Payments" value={pendingCount} tone="warn" hint="Active reservations" />
           <Metric label="Payment Mode" value="DEMO" tone="neutral" hint="No real money movement" />
         </div>
 
@@ -247,7 +247,7 @@ export function PaymentsView() {
           <div className="space-y-4">
             <Panel
               eyebrow="Audit Trail"
-              title="Settled Transactions"
+              title="Demo Payment Ledger"
               actions={
                 <div className="flex items-center gap-1 rounded bg-base-850 p-0.5 font-mono text-3xs">
                   {(['ALL', 'PAID', 'PENDING', 'FAILED'] as const).map((tab) => (
@@ -413,7 +413,7 @@ export function PaymentsView() {
                   onClick={() => window.print()}
                   className="rounded border border-base-600 bg-base-800 px-4 py-2 font-mono text-2xs uppercase tracking-wider text-ink-200 hover:bg-base-700"
                 >
-                  Print Invoice
+                  Print Demo Record
                 </button>
                 <button
                   type="button"
