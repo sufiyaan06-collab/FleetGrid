@@ -291,33 +291,12 @@ export const api = {
   recordEvent: (input: { eventType: string; shipmentId?: string; payload?: Record<string, unknown> }) =>
     post<{ ok: true; event: ShipmentEvent }>('/events', input),
 
-  // Dodo Payments Integrations
-  dodoStatus: () => request<{ provider: string; environment: string; ready: boolean; livePaymentsEnabled: boolean; configured: Record<string, boolean> }>('/payments/dodo/status'),
-  createDodoCheckout: (input: {
-    shipmentId?: string | null;
-    recoveryPlanId?: string | null;
-    amount: number;
-    currency?: string;
-    customerName?: string;
-    customerEmail?: string;
-  }) =>
-    post<{
-      payment: Payment;
-      checkoutUrl: string;
-      isSandbox: boolean;
-      provider: string;
-    }>('/payments/dodo/checkout', input),
-
-  confirmDodoPayment: (input: {
-    paymentId: string;
-    providerReference?: string;
-    paymentMethod?: string;
-  }) =>
-    post<{
-      status: string;
-      payment: Payment;
-      shipment: Shipment | null;
-    }>('/payments/dodo/confirm', input),
+  // Demo payment simulator. No external gateway and no real money movement.
+  demoPaymentStatus: () => request<{ provider: string; mode: 'DEMO_ONLY'; realMoney: false; ready: boolean }>('/payments/demo/status'),
+  createDemoPayment: (input: { shipmentId: string }) =>
+    post<{ payment: Payment; mode: 'DEMO_ONLY'; realMoney: false }>('/payments/demo/checkout', input),
+  settleDemoPayment: (paymentId: string) =>
+    post<{ payment: Payment; mode: 'DEMO_ONLY'; realMoney: false }>(`/payments/demo/${encodeURIComponent(paymentId)}/settle`, {}),
 
   payments: () => request<{ payments: Payment[] }>('/payments'),
   payment: (id: string) => request<{ payment: Payment }>(`/payments/${id}`),
