@@ -15,6 +15,7 @@ export type BookableCapacityOffer = CapacityOffer & {
 /** Legacy offers with missing route/rate data remain stored but cannot be booked. */
 export function isBookableCapacityOffer(offer: CapacityOffer): offer is BookableCapacityOffer {
   return Boolean(
+    offer.route?.trim() &&
     offer.origin?.trim() &&
     offer.destination?.trim() &&
     offer.pricePerT !== null &&
@@ -66,7 +67,7 @@ export async function syncOfferForTruck(truck: Truck, status?: CapacityOffer['st
   const nextStatus: CapacityOffer['status'] = status ?? (current.status === 'CLOSED' ? 'CLOSED' : truck.availableT > 0 ? 'OPEN' : 'HELD');
   const updated = await db.capacityOffers.update(current.id, {
     availableT: round(truck.availableT),
-    route: `${truck.origin} → ${truck.destination}`,
+    route: truck.origin?.trim() && truck.destination?.trim() ? `${truck.origin} → ${truck.destination}` : null,
     origin: truck.origin,
     destination: truck.destination,
     status: nextStatus,
