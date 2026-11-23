@@ -362,7 +362,7 @@ export async function suggestNearbyCapacity(input: {
     };
   };
 
-  const selectedOffer = offers.filter(isBookableCapacityOffer).find((o) => o.truckId === input.truckId) ?? null;
+  const selectedOffer = offers.find((offer): offer is BookableCapacityOffer => offer.truckId === input.truckId && isBookableCapacityOffer(offer)) ?? null;
   const selected = selectedOffer ? decorate(selectedOffer) : null;
 
   const suggestions: NearbySuggestion[] = offers
