@@ -95,9 +95,9 @@ export interface User {
   id: string;
   name: string;
   role: Role;
-  organizationId: string;
-  contact: string;
-  createdAt: string;
+  organizationId: string | null;
+  contact: string | null;
+  createdAt: string | null;
 }
 
 export interface Driver {
