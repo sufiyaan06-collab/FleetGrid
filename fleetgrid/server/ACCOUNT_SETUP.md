@@ -1,4 +1,4 @@
-# FleetGrid account and operations setup
+# FleetGrid account, storage, and payment setup
 
 ## Shipper and driver accounts
 
@@ -19,66 +19,70 @@ If these settings are missing, signup returns a clear service-configuration erro
 
 Operations users cannot self-register. An administrator with access to the server environment can provision an account using the CLI script.
 
-From the repository root, first ensure the server dependencies are installed:
+From the repository root, ensure server dependencies are installed:
 
 ```bash
 npm --prefix fleetgrid/server install
 ```
 
-Set the environment variables in the trusted shell that has access to the production `DATABASE_URL`:
+Set these variables in the trusted shell that has access to the intended database:
 
 - `OPS_NAME` — operator's display name
 - `OPS_EMAIL` — unique sign-in email
 - `OPS_PASSWORD` — initial password (10–128 characters)
 - `OPS_ROLE` — one of `CONTROL_TOWER`, `OPERATOR`, or `VERIFIER`
 
-Then run:
+In development/test, run:
 
 ```bash
 npm --prefix fleetgrid/server run provision:ops
 ```
 
-The command stores only a password hash, marks the administrator-provisioned operations email as verified, and does not print the password. Do not commit environment files or put passwords in source control. Use your hosting provider's secret environment settings or a secure shell session.
+Production provisioning is blocked unless both `FLEETGRID_ALLOW_OPS_PROVISIONING=true` and `--confirm-production` are explicitly supplied. Production also requires the approved persistent database and `FLEETGRID_POSTGRES_SCHEMA_READY=true`. Do not run the command against the legacy database before its target and backup have been reviewed.
 
-## Production requirements
+The command stores only a password hash, marks the administrator-provisioned operations email as verified, and does not print the password. Never commit environment files or put passwords in source control.
 
+## Production storage requirements
+
+- Production must use a persistent PostgreSQL database. The application now refuses to start if `DATABASE_URL` is missing; it will not silently use JSON files on an ephemeral web-service filesystem.
+- When `DATABASE_URL` is present in production, the app also requires `FLEETGRID_POSTGRES_SCHEMA_READY=true` before it creates the Node JSONB table and indexes.
+- Set `FLEETGRID_POSTGRES_SCHEMA_READY=true` only after verifying the exact target database, backup/restore plan, schema compatibility, and approved migration procedure.
+- Keep `AUTO_SEED=false`. The application must not populate production with deterministic demo identities or shipments.
 - Set `CORS_ORIGIN` to the exact allowed frontend origins (comma-separated). Do not use `*` in production.
-- Keep `AUTO_SEED=false` so a fresh production database does not receive demonstration shipments or drivers.
-- Do not enable deployment until the production database has been backed up and the new Node PostgreSQL store has a reviewed migration plan.
-- Email verification and real Dodo payment settlement are separate integrations; configure and test them independently.
+- The current Render free PostgreSQL instance is time-limited and has no free-plan backups. Select and verify a persistent database target before its expiration. No paid resource is required or authorized by this setup guide.
 
-## JSON-to-PostgreSQL migration
+## Database migration — two different procedures
 
-The Node API can use PostgreSQL, but the application must not be switched to a new empty database while existing JSON records are still needed.
+### JSON collections to Node PostgreSQL
 
-1. Take a full backup of the current JSON data directory and keep the original files unchanged.
-2. Make the backup available to the migration environment and set `DATA_DIR` to that directory.
-3. Set `DATABASE_URL` to the intended Render PostgreSQL connection string. Do not paste it into source control or a chat.
-4. Install server dependencies with `npm --prefix fleetgrid/server install`.
-5. Run a dry run first: `npm --prefix fleetgrid/server run migrate:postgres`.
-6. Confirm the printed collection counts match the backup and the target `fleetgrid_records` table is empty.
-7. Only after reviewing the backup and dry-run output, run `npm --prefix fleetgrid/server run migrate:postgres -- --apply`.
-8. Verify the imported record counts and application workflows before changing the production service to use PostgreSQL.
+`migrate-json-to-postgres.ts` imports an existing Node JSON data directory into the Node `fleetgrid_records` JSONB table. It is **not** the legacy Python/SQLAlchemy relational database importer.
 
-The migration utility refuses to write if the target table already contains records, checks record IDs and duplicate account emails, and wraps all inserts in one database transaction. It never edits or deletes the source JSON files. If the dry run or import reports an error, stop and investigate rather than clearing the target database.
+- It requires `DATA_DIR` to point to the exact source JSON backup and `DATABASE_URL` to the intended target.
+- Run the dry run first: `npm --prefix fleetgrid/server run migrate:postgres`.
+- The dry run checks source collection files, record IDs, duplicate auth emails, active payment conflicts, and whether the target table is empty. It does not create the table or insert records.
+- A non-production apply requires all three:
+  - `FLEETGRID_ALLOW_JSON_IMPORT=true`
+  - `--apply`
+  - `--confirm-target`
+- Production apply is blocked by this script. Do not bypass that guard.
 
-The migration must be coordinated with a maintenance window or a write freeze so records are not created or changed between taking the backup and switching the application. Do not run the import against a database that already contains live application records.
+### Legacy Python/SQLAlchemy PostgreSQL to Node collections
 
-## Dodo Payments configuration
+The legacy database contains normalized relational tables. It is not compatible with the Node collection store by direct copy.
 
-The Dodo checkout endpoint is enabled only when both the API and signed-webhook settings are present. Configure these values in the Render service's secret environment settings:
+- `scripts/inspect-legacy-postgres.ts` is a read-only schema/count inventory.
+- `scripts/import-legacy-postgres.ts` is a read-only mapping preview. It requires a dedicated SELECT-only `LEGACY_DATABASE_URL`; it has no target connection, no apply mode, and no DDL/DML.
+- Legacy user passwords/sessions are not migrated. Legacy payment rows remain quarantined until independently reconciled.
+- Nullable fields, enum mappings, ownership relationships, and account recovery are governed by `DATABASE_COMPATIBILITY_DECISIONS_2026-11-23.md`.
+- No production importer or production database write is authorized. A restorable backup, reviewed target, tested import, reconciliation report, and explicit production approval are required before any cutover.
 
-- `DODO_PAYMENTS_API_KEY` — server-side Dodo API key.
-- `DODO_PRODUCT_ID` — a real product ID from the same Dodo account and mode.
-- `DODO_ENVIRONMENT` — use `test_mode` while testing; switch to `live_mode` only after successful end-to-end verification.
-- `DODO_PAYMENTS_WEBHOOK_KEY` — the signing secret for the webhook endpoint created in Dodo.
-- `DODO_PAYMENTS_WEBHOOK_ENABLED` — leave unset/false until signed test-mode webhook delivery has been verified; set to `true` only after that test passes.
-- `APP_BASE_URL` — the public FleetGrid frontend URL used for the checkout return.
+## Payment demonstration
 
-Configure the Dodo webhook URL as:
+FleetGrid's Payments Hub uses the **FleetGrid Demo Simulator** for the final-year project demonstration.
 
-`https://fleetgrid-app.onrender.com/payments/dodo/webhook`
+- The server creates a pending record from the agreed price stored on the shipper's own driver-confirmed shipment.
+- The signed-in shipper explicitly selects **Simulate successful demo payment**.
+- The server validates ownership and state, then records an idempotent simulated settlement and audit event.
+- No bank, card network, wallet, or payment provider is contacted. No money moves, and the record is not a tax invoice or proof of a real-world settlement.
 
-Subscribe to `payment.succeeded`, `payment.failed`, and `payment.cancelled`. The endpoint verifies the Standard Webhooks signature against the original raw request body, checks the checkout-session reference and currency, and treats duplicate events idempotently. Browser redirects and the browser confirmation endpoint cannot mark a payment as paid.
-
-Do not enable checkout until the webhook endpoint is configured and tested in Dodo test mode. The API additionally requires `DODO_PAYMENTS_WEBHOOK_ENABLED=true`, so merely adding an API key or secret does not open checkout. A successful payment event updates the payment record only; it does not bypass the driver's shipment-acceptance workflow.
+Dodo shipment checkout, status, confirmation, and webhook endpoints are disabled. Do not add Dodo API keys, product IDs, or webhook secrets for FleetGrid shipment collections. See `DODO_PAYMENTS_SETUP.md` for the deprecation notice and rationale.
