@@ -128,6 +128,7 @@ async function findCapacityForRoute(input: NearbyCapacityInput): Promise<NearbyC
     if (!truck) continue;
     if (offer.status === 'CLOSED') continue;
     if (truck.availableT < input.minAvailableT) continue;
+    if (!truck.origin?.trim() || !truck.destination?.trim()) continue;
     if (!canonicalEquals(truck.origin, input.origin)) continue;
     if (!canonicalEquals(truck.destination, input.destination)) continue;
     if (['DELIVERED', 'RECOVERY', 'INCIDENT'].includes(truck.status)) continue;
