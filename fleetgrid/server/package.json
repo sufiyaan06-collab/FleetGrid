@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.json --noEmit false",
     "serve": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx test/payments.test.ts && tsx test/auth-security.test.ts && tsx test/flow.test.ts && tsx test/auth-api.test.ts && tsx test/auth-integration.test.ts && tsx test/legacy-importer.test.ts",
+    "test": "tsx test/production-storage.test.ts && tsx test/payments.test.ts && tsx test/auth-security.test.ts && tsx test/flow.test.ts && tsx test/auth-api.test.ts && tsx test/auth-integration.test.ts && tsx test/legacy-importer.test.ts",
     "reset": "node ../scripts/reset.mjs",
     "provision:ops": "tsx scripts/provision-ops.ts",
     "migrate:postgres": "tsx scripts/migrate-json-to-postgres.ts",
