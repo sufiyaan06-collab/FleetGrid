@@ -308,6 +308,27 @@ try {
   });
   assert.equal(crossShipperDemoCheckout.status, 404, 'a shipper cannot create a payment for another shipper shipment');
 
+  const draftShipmentPayment = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_b' }),
+  });
+  assert.equal(draftShipmentPayment.status, 409, 'payment cannot start before driver confirmation');
+
+  const zeroPricePayment = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_zero_price' }),
+  });
+  assert.equal(zeroPricePayment.status, 400, 'zero-priced shipments cannot be paid');
+
+  const invalidCurrencyPayment = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_bad_currency' }),
+  });
+  assert.equal(invalidCurrencyPayment.status, 400, 'shipments with invalid currency cannot be paid');
+
   const demoCheckout = await request('/payments/demo/checkout', {
     method: 'POST',
     headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
