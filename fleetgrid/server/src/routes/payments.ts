@@ -14,8 +14,7 @@ import type { User } from '../types.js';
 
 export const paymentsRouter: Router = Router();
 
-// Provider callbacks are public only at this route and are authenticated by the
-// Dodo Standard Webhooks signature. All other payment routes require a user session.
+// Legacy Dodo endpoints are intentionally disabled. Operational payment routes require a user session.
 // Dodo is intentionally disabled for FleetGrid shipment settlements. Its checkout
 // model is not approved for collecting funds on behalf of independent carriers.
 paymentsRouter.post('/payments/dodo/webhook', (_req, res) => {
@@ -58,15 +57,6 @@ paymentsRouter.post(
 );
 
 
-const createDodoCheckoutSchema = z.object({
-  shipmentId: z.string().min(2).nullish(),
-  recoveryPlanId: z.string().min(2).nullish(),
-  amount: z.number().positive().optional(),
-  currency: z.string().length(3).optional(),
-  customerName: z.string().min(1).optional(),
-  customerEmail: z.string().email().optional(),
-});
-
 paymentsRouter.get('/payments/dodo/status', (_req, res) => {
   res.status(410).json({
     provider: 'disabled',
@@ -86,13 +76,11 @@ paymentsRouter.post('/payments/dodo/checkout', (_req, res) => {
   });
 });
 
-// A browser redirect or client request is not proof that money was received.
-// Only a signature-verified provider webhook may transition a payment to PAID.
 paymentsRouter.post('/payments/dodo/confirm', (_req, res) => {
-  res.status(409).json({
+  res.status(410).json({
     error: {
-      code: 'PROVIDER_CONFIRMATION_REQUIRED',
-      message: 'Payment confirmation is only accepted from a verified Dodo Payments webhook.',
+      code: 'DODO_SHIPMENT_PAYMENTS_DISABLED',
+      message: 'Dodo shipment payment confirmation is disabled. Use the FleetGrid demo simulator.',
     },
   });
 });
