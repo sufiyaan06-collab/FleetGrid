@@ -95,7 +95,7 @@ export interface User {
   id: string;
   name: string;
   role: Role;
-  organizationId: string | null;
+  organizationId: string;
   contact: string | null;
   createdAt: string | null;
 }
