@@ -8,6 +8,10 @@ class Settings:
     PROJECT_NAME: str = "FleetGrid API"
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    LEGACY_API_ENABLED: bool = os.getenv(
+        "LEGACY_API_ENABLED",
+        "false" if ENVIRONMENT.strip().lower() in {"production", "prod"} else "true",
+    ).strip().lower() == "true"
     PORT: int = int(os.getenv("PORT", 8000))
     HOST: str = os.getenv("HOST", "0.0.0.0")
 
