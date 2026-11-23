@@ -52,7 +52,9 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
   const incident = await getIncident(incidentId);
   const truck = await db.trucks.findById(incident.truckId);
   if (!truck) throw ApiError.notFound(`Truck ${incident.truckId} does not exist.`);
-  if (!truck.origin?.trim() || !truck.destination?.trim()) {
+  const origin = truck.origin;
+  const destination = truck.destination;
+  if (!origin?.trim() || !destination?.trim()) {
     throw ApiError.conflict('Recovery planning requires a recorded origin and destination for the affected truck.');
   }
 
@@ -63,8 +65,8 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
     incidentId: incident.id,
     truckId: truck.id,
     location: incident.location,
-    origin: truck.origin,
-    destination: truck.destination,
+    origin,
+    destination,
     totalWeightT,
     affectedShipments: shipments.map((s) => ({
       id: s.id,
@@ -82,6 +84,12 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
       'Distances and ETAs below are demo estimates unless a routing provider is integrated.',
     ],
   };
+}
+
+function pointForTruck(truck: Truck): { lat: number; lng: number } | null {
+  const { lat, lng } = truck;
+  if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
 }
 
 function estimateLeg(
@@ -126,18 +134,14 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
     db.drivers.get(),
   ]);
 
-  const incidentPoint = blockedTruck.lat !== null && blockedTruck.lng !== null
-    ? { lat: blockedTruck.lat, lng: blockedTruck.lng }
-    : null;
+  const incidentPoint = pointForTruck(blockedTruck);
 
   const options: RecoveryOption[] = trucks
     .flatMap((truck) => {
       if (truck.id === blockedTruck.id) return [];
       const offer = offers.find((candidate) => candidate.truckId === truck.id);
       if (!offer || !isBookableCapacityOffer(offer)) return [];
-      const truckPoint = truck.lat !== null && truck.lng !== null
-        ? { lat: truck.lat, lng: truck.lng }
-        : null;
+      const truckPoint = pointForTruck(truck);
       const leg = estimateLeg(truck.id, incidentPoint, truckPoint);
       if (!leg) return [];
 
