@@ -91,6 +91,12 @@ const auditor=mapLegacySnapshot(auditorInput).records.find(r=>r.sourceTable==='u
 assert.equal(auditor?.outcome,'quarantined');
 assert.ok(auditor?.issues.some(i=>i.code==='ROLE_REQUIRES_ADMIN_REVIEW'));
 
+const unassignedInput=valid();
+unassignedInput.users[0]!.organization_id=null;
+const unassigned=mapLegacySnapshot(unassignedInput).records.find(r=>r.sourceTable==='users');
+assert.equal(unassigned?.outcome,'quarantined');
+assert.ok(unassigned?.issues.some(i=>i.code==='USER_ORGANIZATION_MISSING'));
+
 const malformedEvent=valid();
 malformedEvent.shipment_events[0]!.payload_json='{bad json';
 assert.equal(mapLegacySnapshot(malformedEvent).records.find(r=>r.sourceTable==='shipment_events')?.outcome,'quarantined');
