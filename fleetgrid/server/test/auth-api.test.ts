@@ -156,13 +156,20 @@ try {
   const demoCreate = await request('/payments/demo/checkout', {
     method: 'POST',
     headers: { cookie: first.cookie },
-    body: JSON.stringify({ shipmentId: demoShipment.id }),
+    body: JSON.stringify({ shipmentId: demoShipment.id, amount: 1, currency: 'USD' }),
   });
   assert.equal(demoCreate.status, 201, 'shipper can create a demo payment for an owned confirmed shipment');
   const demoCreateBody = await demoCreate.json() as { payment: { id: string; status: string; provider: string; amount: number } };
   assert.equal(demoCreateBody.payment.status, 'PENDING');
   assert.equal(demoCreateBody.payment.provider, 'FleetGrid Demo Simulator');
-  assert.equal(demoCreateBody.payment.amount, 1250, 'server uses the stored shipment amount');
+  assert.equal(demoCreateBody.payment.amount, 1250, 'server ignores client-supplied amount and uses the stored shipment amount');
+
+  const crossAccountDemoCreate = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: second.cookie },
+    body: JSON.stringify({ shipmentId: demoShipment.id }),
+  });
+  assert.equal(crossAccountDemoCreate.status, 404, 'another shipper cannot create a payment for this shipment');
 
   const duplicateDemoCreate = await request('/payments/demo/checkout', {
     method: 'POST',
