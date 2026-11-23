@@ -79,3 +79,22 @@
 - Build a dry-run-only importer with deterministic ID preservation, source-to-target mapping, validation, quarantine output, and an import ledger.
 - Test against a restored staging clone and compare source/target counts and foreign-key integrity.
 - Require explicit approval before any production write or cutover.
+
+
+## Live deployed schema metadata check — 2026-11-24
+
+A second read-only query against the current Render PostgreSQL database inspected `information_schema.columns` only. It returned no row values or personal data. The deployed schema confirms the following nullable/absent fields:
+
+- **organizations:** no `created_at` column; `status` is nullable.
+- **users:** `email`, `organization_id`, `contact`, and `created_at` are nullable.
+- **drivers:** no `name`, `phone`, or `created_at` columns; `assigned_truck_id` and `status` are nullable.
+- **trucks:** `status`, `lat`, `lng`, `origin`, `destination`, `departure_at`, and `driver_id` are nullable.
+- **capacity_offers:** `departure_at`, `status`, and `price_rule` are nullable.
+- **shipments:** `deadline_at`, `status`, `truck_id`, `price`, `currency`, and `created_at` are nullable.
+- **shipment_events:** `payload_json`, `actor_type`, `actor_id`, `timestamp`, `blockchain_tx`, and `proof_status` are nullable.
+- **incidents:** `severity`, `transcript`, `structured_summary`, `status`, and `created_at` are nullable.
+- **recovery_plans:** serialized JSON fields, selected truck, cost, ETA, status, approval metadata, and `created_at` are nullable.
+- **payments:** `provider`, `currency`, `status`, `provider_reference`, and `created_at` are nullable; `amount` is NOT NULL.
+- **notifications:** `status` and `created_at` are nullable.
+
+This confirms that ORM defaults cannot be treated as stored historical values. The compatibility decision record remains authoritative. The Node `fleetgrid_records` table is still absent, and this inspection performed no DDL or DML.
