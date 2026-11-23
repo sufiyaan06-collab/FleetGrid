@@ -37,10 +37,6 @@ class Settings:
     ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "")
     ELEVENLABS_AGENT_ID: str = os.getenv("ELEVENLABS_AGENT_ID", "")
 
-    # Dodo Payments
-    DODO_PAYMENTS_API_KEY: str = os.getenv("DODO_PAYMENTS_API_KEY", "")
-    DODO_WEBHOOK_SECRET: str = os.getenv("DODO_WEBHOOK_SECRET", "")
-
     # EVM Blockchain (Proof Anchoring)
     EVM_RPC_URL: str = os.getenv("EVM_RPC_URL", "")
     EVM_PRIVATE_KEY: str = os.getenv("EVM_PRIVATE_KEY", "")
