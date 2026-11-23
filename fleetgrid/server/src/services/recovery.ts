@@ -7,6 +7,7 @@ import { hub } from './realtime.js';
 import { getIncident, setIncidentStatus } from './incidents.js';
 import { getShipment, releaseCapacity, setShipmentStatus } from './shipments.js';
 import { transitionTruck } from './trucks.js';
+import { isBookableCapacityOffer } from './capacity.js';
 import { RECOVERY_PLAN_TRANSITIONS, type RecoveryOption, type RecoveryPlan } from '../types.js';
 
 /**
@@ -51,6 +52,9 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
   const incident = await getIncident(incidentId);
   const truck = await db.trucks.findById(incident.truckId);
   if (!truck) throw ApiError.notFound(`Truck ${incident.truckId} does not exist.`);
+  if (!truck.origin?.trim() || !truck.destination?.trim()) {
+    throw ApiError.conflict('Recovery planning requires a recorded origin and destination for the affected truck.');
+  }
 
   const shipments = await db.shipments.find((s) => incident.affectedShipmentIds.includes(s.id));
   const totalWeightT = round(shipments.reduce((sum, s) => sum + s.weightT, 0));
@@ -82,11 +86,12 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
 
 function estimateLeg(
   truckId: string,
-  from: { lat: number; lng: number },
-  to: { lat: number; lng: number },
-): { distanceKm: number; etaMinutes: number } {
+  from: { lat: number; lng: number } | null,
+  to: { lat: number; lng: number } | null,
+): { distanceKm: number; etaMinutes: number } | null {
   const seeded = DEMO_LEG_ESTIMATES[truckId];
   if (seeded && UNASSIGNED_RECOVERY_TRUCKS.includes(truckId)) return seeded;
+  if (!from || !to) return null;
 
   const distanceKm = round(haversineKm(from, to) * ROAD_FACTOR, 1);
   return { distanceKm, etaMinutes: Math.max(5, Math.round((distanceKm / DEMO_SPEED_KMH) * 60)) };
@@ -121,33 +126,36 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
     db.drivers.get(),
   ]);
 
-  const incidentPoint = Number.isFinite(blockedTruck.lat)
+  const incidentPoint = blockedTruck.lat !== null && blockedTruck.lng !== null
     ? { lat: blockedTruck.lat, lng: blockedTruck.lng }
-    : { lat: blockedTruck.lat, lng: blockedTruck.lng };
+    : null;
 
   const options: RecoveryOption[] = trucks
-    .filter((truck) => truck.id !== blockedTruck.id)
-    .map((truck) => {
-      const offer = offers.find((o) => o.truckId === truck.id);
-      const leg = estimateLeg(truck.id, incidentPoint, { lat: truck.lat, lng: truck.lng });
-      const cost = Math.round(impact.totalWeightT * (offer?.pricePerT ?? 850) * RECOVERY_COST_MULTIPLIER);
+    .flatMap((truck) => {
+      if (truck.id === blockedTruck.id) return [];
+      const offer = offers.find((candidate) => candidate.truckId === truck.id);
+      if (!offer || !isBookableCapacityOffer(offer)) return [];
+      const truckPoint = truck.lat !== null && truck.lng !== null
+        ? { lat: truck.lat, lng: truck.lng }
+        : null;
+      const leg = estimateLeg(truck.id, incidentPoint, truckPoint);
+      if (!leg) return [];
 
+      const cost = Math.round(impact.totalWeightT * offer.pricePerT * RECOVERY_COST_MULTIPLIER);
       const blockers: string[] = [];
       if (truck.availableT < impact.totalWeightT) {
         blockers.push(`insufficient spare capacity (${round(truck.availableT)}T < ${impact.totalWeightT}T)`);
       }
-      if (truck.destination !== impact.destination) {
+      if (!truck.destination || truck.destination !== impact.destination) {
         blockers.push(`does not deliver to ${impact.destination}`);
       }
-      if (truck.origin !== impact.origin) {
+      if (!truck.origin || truck.origin !== impact.origin) {
         blockers.push(`does not pick up from ${impact.origin}`);
       }
       if (UNAVAILABLE_RECOVERY_STATES.has(truck.status)) {
         blockers.push(`truck is ${truck.status}`);
       }
-      if (offer?.status === 'CLOSED') {
-        blockers.push('capacity offer closed');
-      }
+      if (offer.status === 'CLOSED') blockers.push('capacity offer closed');
 
       const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
       const facts = [
@@ -157,7 +165,7 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
         driver ? `driver ${driver.name}` : 'no driver assigned',
       ];
 
-      return {
+      return [{
         truckId: truck.id,
         availableT: round(truck.availableT),
         etaMinutes: leg.etaMinutes,
@@ -166,14 +174,13 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
         currency: 'INR',
         compatible: blockers.length === 0,
         reason: blockers.length === 0 ? `Compatible: ${facts.join(', ')}` : `Rejected: ${blockers.join('; ')}`,
-      } satisfies RecoveryOption;
+      } satisfies RecoveryOption];
     })
     .sort((a, b) => {
       if (a.compatible !== b.compatible) return a.compatible ? -1 : 1;
       if (a.etaMinutes !== b.etaMinutes) return a.etaMinutes - b.etaMinutes;
       return a.cost - b.cost;
     });
-
   void incident;
   return { impact, options };
 }
