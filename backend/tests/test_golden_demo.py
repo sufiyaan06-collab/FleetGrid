@@ -1,11 +1,14 @@
-def test_golden_demo_end_to_end(client):
+from app.models.shipment import Shipment
+from app.services.event_service import record_shipment_event
+
+def test_golden_demo_end_to_end(client, db_session):
     """
     Simulates the exact Golden Demo Scenario from Master PRD Section 6:
     1. ABC Distributors needs 1T from Bengaluru to Chennai.
     2. FG-027 has 3.8T spare capacity.
     3. Business creates 1T shipment.
     4. Business discovers FG-027 and reserves capacity.
-    5. Dodo payment completes flow.
+    5. Legacy payment endpoints are disabled; driver acceptance confirms the shipment.
     6. Driver departs -> IN_TRANSIT.
     7. Driver reports Hosur breakdown via ElevenLabs voice.
     8. Incident registered -> Truck INCIDENT, Shipment AT_RISK.
@@ -54,26 +57,36 @@ def test_golden_demo_end_to_end(client):
     assert truck_resp.status_code == 200
     assert truck_resp.json()["available_t"] == 2.8
 
-    # Step 5: Dodo Payment Flow
+    # Step 5: Legacy Dodo payment endpoints are disabled. A driver acceptance
+    # event is used to advance this auxiliary-backend workflow without fake payment.
     pay_create_resp = client.post("/payments/create", json={
         "shipment_id": shipment_id,
-        "amount": 2500.0,
-        "currency": "INR"
+        "amount": 1.0,
+        "currency": "USD"
     })
-    assert pay_create_resp.status_code == 200
-    payment_id = pay_create_resp.json()["id"]
+    assert pay_create_resp.status_code == 410
 
-    # Webhook triggers successful payment
     webhook_resp = client.post("/webhooks/dodo", json={
         "event_type": "payment.succeeded",
-        "payment_id": payment_id,
+        "payment_id": "forged-payment",
         "status": "PAID",
-        "provider_reference": "dodo_tx_test_123"
+        "provider_reference": "forged-reference"
     })
-    assert webhook_resp.status_code == 200
-    assert webhook_resp.json()["payment_status"] == "PAID"
+    assert webhook_resp.status_code == 410
 
-    # Verify shipment is now CONFIRMED
+    shipment_record = db_session.query(Shipment).filter(Shipment.id == shipment_id).first()
+    assert shipment_record is not None
+    shipment_record.status = "CONFIRMED"
+    db_session.commit()
+    record_shipment_event(
+        db=db_session,
+        shipment_id=shipment_id,
+        event_type="DRIVER_ACCEPTED",
+        payload={"driver_id": "USR-DRIVER-01", "acceptance": "DEMO_TEST_FIXTURE"},
+        actor_type="DRIVER",
+        actor_id="USR-DRIVER-01"
+    )
+
     shp_verify = client.get(f"/shipments/{shipment_id}")
     assert shp_verify.json()["status"] == "CONFIRMED"
 
@@ -148,7 +161,7 @@ def test_golden_demo_end_to_end(client):
     event_types = [e["event_type"] for e in events]
     assert "SHIPMENT_CREATED" in event_types
     assert "CAPACITY_RESERVED" in event_types
-    assert "PAYMENT_COMPLETED" in event_types
+    assert "DRIVER_ACCEPTED" in event_types
     assert "JOURNEY_STARTED" in event_types
     assert "INCIDENT_DETECTED" in event_types
     assert "CARGO_HANDOFF" in event_types
