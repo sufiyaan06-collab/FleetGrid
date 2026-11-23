@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import SessionLocal
@@ -10,6 +11,11 @@ from app.services.seed_service import seed_demo_database
 def should_seed_demo_database(environment: str, has_trucks: bool) -> bool:
     """Demo fixtures are allowed only outside production and only on an empty DB."""
     return environment.strip().lower() not in {"production", "prod"} and not has_trucks
+
+
+def should_disable_legacy_api(environment: str, enabled: bool) -> bool:
+    """The auxiliary Python API stays dark in production unless explicitly approved."""
+    return environment.strip().lower() in {"production", "prod"} and not enabled
 
 
 from app.routers import (
@@ -53,6 +59,18 @@ app = FastAPI(
     description="Authoritative backend and agent coordination engine for FleetGrid Logistics Network.",
     lifespan=lifespan
 )
+
+@app.middleware("http")
+async def legacy_api_safety_gate(request, call_next):
+    if should_disable_legacy_api(settings.ENVIRONMENT, settings.LEGACY_API_ENABLED) and request.url.path not in {"/", "/health"}:
+        return JSONResponse(
+            status_code=410,
+            content={
+                "detail": "The auxiliary Python API is disabled in production. Use the FleetGrid Node application.",
+                "code": "LEGACY_API_DISABLED",
+            },
+        )
+    return await call_next(request)
 
 # CORS — supports explicit origin list or open wildcard.
 # Browser spec forbids allow_credentials=True with allow_origins=["*"].
