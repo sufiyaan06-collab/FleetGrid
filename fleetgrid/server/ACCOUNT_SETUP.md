@@ -92,7 +92,7 @@ Dodo shipment checkout, status, confirmation, and webhook endpoints are disabled
 
 The FastAPI service under `backend/` is a legacy/optional service, not the primary application API or authentication authority.
 
-- Production sets `LEGACY_API_ENABLED=false`; only `/` and `/health` remain accessible. Operational routes return HTTP 410 until a separate authentication and authorization review is completed.
+- The integration-branch Render blueprint sets `LEGACY_API_ENABLED=false`; after that candidate configuration is applied, only `/` and `/health` remain accessible and operational routes return HTTP 410 until a separate authentication and authorization review is completed. The live Render service still tracks `main` and has not received this change.
 - The legacy Python payment routes and dormant payment service are disabled. They cannot create payment records or accept provider webhooks.
 - Production startup does not run `alembic upgrade head` automatically. Run schema migrations manually only after a verified backup, reviewed migration plan, and explicit approval.
 - Do not enable `LEGACY_API_ENABLED=true` in production merely to make an old endpoint work; the Node application is the supported user-facing API.
