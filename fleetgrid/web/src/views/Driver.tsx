@@ -370,7 +370,7 @@ export function Driver() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between text-sm">
-                  <span className="font-semibold text-ink-100">{truck.origin}</span>
+                  <span className="font-semibold text-ink-100">{truck.origin ?? 'Not recorded'}</span>
                   <span className="font-mono text-xs text-ink-500">&bull;&bull;&bull; NH-48 Corridor &bull;&bull;&bull;&gt;</span>
                   <span className="font-semibold text-ink-100">{truck.destination}</span>
                 </div>
