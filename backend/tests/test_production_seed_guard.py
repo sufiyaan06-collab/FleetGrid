@@ -33,3 +33,6 @@ def test_production_middleware_blocks_legacy_routes_but_keeps_health(client, mon
     assert blocked.status_code == 410
     assert blocked.json()["code"] == "LEGACY_API_DISABLED"
     assert health.status_code == 200
+    health_body = health.json()
+    assert health_body["legacy_api_enabled"] is False
+    assert health_body["payments"]["real_money_enabled"] is False
