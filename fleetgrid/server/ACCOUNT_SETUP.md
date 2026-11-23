@@ -11,7 +11,8 @@
 - Configure these server environment variables before enabling signup:
   - `RESEND_API_KEY`
   - `EMAIL_FROM` (a sender verified with Resend)
-  - `APP_BASE_URL` (the public frontend origin, for example `https://ember-beryl-phi.vercel.app`)
+  - `APP_BASE_URL` (the same-origin public FleetGrid app URL; the current Render candidate uses `https://fleetgrid-app.onrender.com`)
+The current Render candidate serves the React frontend and Node API from the same origin and uses `SameSite=Lax` session cookies. Use the Render app URL above for the production verification and password-reset links. Do not switch `APP_BASE_URL` to the separate Vercel origin unless cross-site cookie behavior is deliberately redesigned and browser-tested; adding an origin to CORS alone does not make the session cookie work cross-site.
 
 If these settings are missing, signup returns a clear service-configuration error. It does not create a demo account or pretend an email was sent.
 
