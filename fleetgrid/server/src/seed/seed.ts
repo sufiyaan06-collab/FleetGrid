@@ -287,19 +287,24 @@ export function buildSeedData(): SeedData {
     return table[key] ?? 850;
   };
 
-  const capacityOffers: CapacityOffer[] = trucks.map((truck) => ({
-    id: `cap_${truck.id.toLowerCase().replace('-', '')}`,
-    truckId: truck.id,
-    route: `${truck.origin} → ${truck.destination}`,
-    origin: truck.origin,
-    destination: truck.destination,
-    availableT: truck.availableT,
-    departureAt: truck.departureAt,
-    status: 'OPEN',
-    priceRule: 'DEMO_PER_TONNE',
-    pricePerT: pricePerTFor(truck.origin, truck.destination),
-    updatedAt: demoTime(0),
-  }));
+  const capacityOffers: CapacityOffer[] = trucks.flatMap((truck) => {
+    if (!truck.origin?.trim() || !truck.destination?.trim()) return [];
+    const origin = truck.origin;
+    const destination = truck.destination;
+    return [{
+      id: `cap_${truck.id.toLowerCase().replace('-', '')}`,
+      truckId: truck.id,
+      route: `${origin} → ${destination}`,
+      origin,
+      destination,
+      availableT: truck.availableT,
+      departureAt: truck.departureAt,
+      status: 'OPEN',
+      priceRule: 'DEMO_PER_TONNE',
+      pricePerT: pricePerTFor(origin, destination),
+      updatedAt: demoTime(0),
+    }];
+  });
 
   /**
    * Historical shipments only. The golden-flow shipment is created live by the
