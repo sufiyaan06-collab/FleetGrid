@@ -139,6 +139,20 @@ try {
   assert.equal(demoMode.mode, 'DEMO_ONLY');
   assert.equal(demoMode.realMoney, false, 'demo mode clearly states no real money is moved');
 
+  const disabledDodoStatus = await request('/payments/dodo/status', { headers: { cookie: first.cookie } });
+  assert.equal(disabledDodoStatus.status, 410, 'Dodo shipment payment integration is explicitly disabled');
+  const disabledDodoCheckout = await request('/payments/dodo/checkout', {
+    method: 'POST',
+    headers: { cookie: first.cookie },
+    body: JSON.stringify({ shipmentId: demoShipment.id }),
+  });
+  assert.equal(disabledDodoCheckout.status, 410, 'Dodo cannot initiate a shipment payment');
+  const disabledDodoWebhook = await request('/payments/dodo/webhook', {
+    method: 'POST',
+    body: JSON.stringify({ type: 'payment.succeeded' }),
+  });
+  assert.equal(disabledDodoWebhook.status, 410, 'Dodo webhook cannot settle FleetGrid shipment payments');
+
   const demoCreate = await request('/payments/demo/checkout', {
     method: 'POST',
     headers: { cookie: first.cookie },
