@@ -28,33 +28,11 @@ export function PaymentsView() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeReceipt, setActiveReceipt] = useState<Payment | null>(null);
   const [checkoutNotice, setCheckoutNotice] = useState('');
-  const [providerStatus, setProviderStatus] = useState<{ ready: boolean; environment: string; configured: Record<string, boolean> } | null>(null);
+  const [providerStatus, setProviderStatus] = useState<{ ready: boolean; provider: string; mode: string; realMoney: false } | null>(null);
   const [filter, setFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'FAILED'>('ALL');
 
   useEffect(() => {
-    void api.dodoStatus().then(setProviderStatus).catch(() => setProviderStatus(null));
-  }, []);
-
-  // A provider return is only a navigation hint. Read the server's payment row;
-  // never infer success from query parameters.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const result = params.get('payment');
-    const paymentId = params.get('id');
-    if (result === 'return' && paymentId) {
-      setCheckoutNotice('Checking the provider-confirmed payment status…');
-      void api.payment(paymentId).then(({ payment }) => {
-        setActiveReceipt(payment);
-        setCheckoutNotice(payment.status === 'PAID'
-          ? 'Dodo has confirmed this payment. FleetGrid received the verified provider event.'
-          : `The provider currently reports ${payment.status}. FleetGrid will update the record after a verified settlement event.`);
-        void refresh();
-      }).catch(() => setCheckoutNotice('We could not retrieve this payment record. Refresh the payment list or contact FleetGrid support.'));
-      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
-    } else if (result === 'cancelled') {
-      setCheckoutNotice('Checkout was cancelled or closed. No payment has been marked as paid.');
-      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
-    }
+    void api.demoPaymentStatus().then(setProviderStatus).catch(() => setProviderStatus(null));
   }, []);
 
   // Use only the price and currency stored on the selected shipment.
@@ -77,26 +55,36 @@ export function PaymentsView() {
     return payments.filter((p: Payment) => p.status === filter);
   }, [payments, filter]);
 
-  // Create a real provider checkout. A browser return never marks a payment as paid.
+  // Create a server-recorded demo payment. This does not move real money.
   const handleInitiatePayment = async () => {
     if (!selectedShipment || !hasValidAmount) {
-      setCheckoutNotice('A valid agreed shipment price is required before checkout can start.');
+      setCheckoutNotice('A valid agreed shipment price is required before a demo payment can start.');
       return;
     }
     setIsProcessing(true);
     setCheckoutNotice('');
     try {
-      const res = await api.createDodoCheckout({
-        shipmentId: selectedShipment.id,
-        amount: totalAmount,
-        currency,
-      });
+      const res = await api.createDemoPayment({ shipmentId: selectedShipment.id });
+      setActiveReceipt(res.payment);
       await refresh();
-      setCheckoutNotice('Payment session created. Complete payment on Dodo’s secure checkout page. FleetGrid will show PAID only after the provider webhook is verified.');
-      // Navigate the current tab so browser popup blockers cannot silently block checkout.
-      window.location.assign(res.checkoutUrl);
+      setCheckoutNotice('Demo payment created. No money has been collected. Open the payment record and explicitly simulate the successful test result.');
     } catch (err) {
-      setCheckoutNotice((err as Error).message || 'Dodo Payments is not configured yet.');
+      setCheckoutNotice((err as Error).message || 'Unable to create demo payment.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSettleDemoPayment = async () => {
+    if (!activeReceipt) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.settleDemoPayment(activeReceipt.id);
+      setActiveReceipt(res.payment);
+      await refresh();
+      setCheckoutNotice('Demo payment marked successful by the FleetGrid server. This is a simulated result; no money moved.');
+    } catch (err) {
+      setCheckoutNotice((err as Error).message || 'Unable to settle demo payment.');
     } finally {
       setIsProcessing(false);
     }
@@ -111,13 +99,13 @@ export function PaymentsView() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight text-ink-50">Dodo Payments Hub</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-ink-50">FleetGrid Payments Hub</h1>
               <span className="rounded-full border border-healthy/40 bg-healthy/10 px-2.5 py-0.5 font-mono text-2xs font-semibold text-healthy">
-                Provider Checkout
+                DEMO / TEST MODE
               </span>
             </div>
             <p className="mt-0.5 text-xs text-ink-400">
-              Secure provider checkout; payment status changes only after verified provider confirmation
+              Demonstration payment workflow for project evaluation. No real payment is processed.
             </p>
           </div>
 
@@ -127,17 +115,17 @@ export function PaymentsView() {
                 <rect x="2" y="5" width="20" height="14" rx="2" />
                 <line x1="2" y1="10" x2="22" y2="10" />
               </svg>
-              Provider: Dodo Payments
+              Provider: FleetGrid Demo Simulator
             </span>
           </div>
         </div>
 
         {/* Top Operational Metrics */}
         <div className="panel grid grid-cols-2 divide-x divide-base-600 sm:grid-cols-4">
-          <Metric label={`Total Paid (${currency})`} value={formatMoney(totalSettled, currency)} tone="healthy" hint="Provider-confirmed payments in this currency" />
+          <Metric label={`Total Paid (${currency})`} value={formatMoney(totalSettled, currency)} tone="healthy" hint="Simulated demo records only" />
           <Metric label="Paid Invoices" value={paidCount} tone="accent" hint="Provider-confirmed receipts" />
           <Metric label="Awaiting Payment" value={pendingCount} tone="warn" hint="Active reservations" />
-          <Metric label="Confirmation" value="Verified" tone="neutral" hint="Signed provider webhook" />
+          <Metric label="Payment Mode" value="DEMO" tone="neutral" hint="No real money movement" />
         </div>
 
         {/* Workspace: Checkout & Payment Terminal */}
@@ -149,7 +137,7 @@ export function PaymentsView() {
               title="Freight Capacity Settlement"
               actions={
                 <span className={cn('font-mono text-2xs', providerStatus?.ready ? 'text-healthy' : 'text-warn')}>
-                  ● {providerStatus?.ready ? `Dodo ${providerStatus.environment.replace('_mode', '')} configured` : 'Dodo setup incomplete'}
+                  ● {providerStatus?.ready ? 'Demo simulator ready' : 'Demo simulator unavailable'}
                 </span>
               }
             >
@@ -217,9 +205,9 @@ export function PaymentsView() {
                 )}
 
                 <div className="rounded-lg border border-base-700 bg-base-850 p-3 text-xs text-ink-300">
-                  <div className="font-semibold text-ink-100">Payment provider: Dodo Payments</div>
-                  <p className="mt-1 text-ink-400">Available payment methods depend on your Dodo merchant configuration and the customer’s location. FleetGrid never collects card or bank credentials.</p>
-                  {!providerStatus?.ready && <p className="mt-2 text-warn">Dodo checkout is not ready. Configure the API key, pay-what-you-want product, currency, signed webhook, and public app URL in the server environment.</p>}
+                  <div className="font-semibold text-ink-100">Payment provider: FleetGrid Demo Simulator</div>
+                  <p className="mt-1 text-ink-400">This is a controlled project demonstration. It records a pending payment and lets the signed-in shipper simulate settlement. No bank, card, wallet, or payment gateway is contacted.</p>
+                  {!providerStatus?.ready && <p className="mt-2 text-warn">The demo payment simulator is currently unavailable.</p>}
                 </div>
 
                 {/* Display the shipment's stored agreed amount; no invented fee/tax estimates. */}
@@ -248,7 +236,7 @@ export function PaymentsView() {
                     onClick={handleInitiatePayment}
                     className="flex-1 rounded-lg bg-healthy px-4 py-3 font-mono text-xs font-bold tracking-wider text-base-950 uppercase shadow-md transition-all hover:bg-healthy/90 active:scale-[0.99] disabled:opacity-50"
                   >
-                    {isProcessing ? 'Connecting to Dodo Payments…' : !providerStatus?.ready ? 'Dodo setup required' : session?.user.role !== 'BUSINESS' ? 'Shipper account required to pay' : hasValidAmount ? `Pay ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)} via Dodo` : 'Shipment price required'}
+                    {isProcessing ? 'Creating demo payment…' : !providerStatus?.ready ? 'Demo simulator unavailable' : session?.user.role !== 'BUSINESS' ? 'Shipper account required to pay' : hasValidAmount ? `Create demo payment · ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)}` : 'Shipment price required'}
                   </button>
                 </div>
               </div>
@@ -379,8 +367,8 @@ export function PaymentsView() {
                     <div className="font-semibold text-ink-200">{activeReceipt.id}</div>
                   </div>
                   <div>
-                    <span className="text-ink-500">DODO REFERENCE</span>
-                    <div className="font-semibold text-accent">{activeReceipt.providerReference}</div>
+                    <span className="text-ink-500">DEMO REFERENCE</span>
+                    <div className="font-semibold text-accent">{activeReceipt.providerReference || 'Not applicable — simulated record'}</div>
                   </div>
                   <div>
                     <span className="text-ink-500">STATUS</span>
@@ -396,14 +384,28 @@ export function PaymentsView() {
                   </div>
                   <div>
                     <span className="text-ink-500">PAYMENT METHOD</span>
-                    <div className="font-semibold text-ink-200">{activeReceipt.paymentMethod || 'Dodo Payments'}</div>
+                    <div className="font-semibold text-ink-200">{activeReceipt.paymentMethod || 'FleetGrid Demo Simulator'}</div>
                   </div>
                 </div>
               </div>
 
               <div className={cn('rounded border p-3 text-2xs', activeReceipt.status === 'PAID' ? 'border-healthy/30 bg-healthy/5 text-healthy' : 'border-warn/30 bg-warn/5 text-warn')}>
-                {activeReceipt.status === 'PAID' ? 'Payment confirmed by Dodo’s signed webhook. This is FleetGrid’s payment record; use the provider invoice for the official tax invoice.' : 'This payment is not settled. Do not treat this record as proof of payment.'}
+                {activeReceipt.status === 'PAID' ? 'Demo settlement recorded by FleetGrid. No real money moved; this is not a bank or provider receipt.' : 'This demo payment is pending. Use the simulation action below to demonstrate settlement. No real money will move.'}
               </div>
+
+              {activeReceipt.status === 'PENDING' && activeReceipt.provider === 'FleetGrid Demo Simulator' && (
+                <div className="rounded-lg border border-warn/30 bg-warn/5 p-3">
+                  <p className="text-2xs text-warn">DEMO ACTION — this records a simulated successful payment only. It does not contact a payment provider or move money.</p>
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => void handleSettleDemoPayment()}
+                    className="mt-3 w-full rounded bg-healthy px-4 py-2.5 font-mono text-2xs font-bold uppercase tracking-wider text-base-950 disabled:opacity-50"
+                  >
+                    {isProcessing ? 'Recording demo result…' : 'Simulate successful demo payment'}
+                  </button>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
