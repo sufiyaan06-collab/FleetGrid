@@ -115,6 +115,72 @@ try {
   const first = await makeBusiness('First Shipper', 'first@example.test');
   const second = await makeBusiness('Second Shipper', 'second@example.test');
 
+  // The demo payment flow is server-controlled, scoped to the shipper, and idempotent.
+  const demoShipment = await db.shipments.create({
+    id: 'shipment-demo-payment-test',
+    reference: 'FG-DEMO-PAY-001',
+    cargoName: 'Test cargo',
+    shipperId: first.organization.id,
+    origin: 'Bengaluru',
+    destination: 'Mysuru',
+    weightT: 2,
+    deadlineAt: null,
+    status: 'CONFIRMED',
+    truckId: null,
+    capacityOfferId: null,
+    price: 1250,
+    currency: 'INR',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  const demoStatus = await request('/payments/demo/status', { headers: { cookie: first.cookie } });
+  assert.equal(demoStatus.status, 200, 'authenticated shipper can read demo payment mode');
+  const demoMode = await demoStatus.json() as { mode: string; realMoney: boolean };
+  assert.equal(demoMode.mode, 'DEMO_ONLY');
+  assert.equal(demoMode.realMoney, false, 'demo mode clearly states no real money is moved');
+
+  const demoCreate = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: first.cookie },
+    body: JSON.stringify({ shipmentId: demoShipment.id }),
+  });
+  assert.equal(demoCreate.status, 201, 'shipper can create a demo payment for an owned confirmed shipment');
+  const demoCreateBody = await demoCreate.json() as { payment: { id: string; status: string; provider: string; amount: number } };
+  assert.equal(demoCreateBody.payment.status, 'PENDING');
+  assert.equal(demoCreateBody.payment.provider, 'FleetGrid Demo Simulator');
+  assert.equal(demoCreateBody.payment.amount, 1250, 'server uses the stored shipment amount');
+
+  const duplicateDemoCreate = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: first.cookie },
+    body: JSON.stringify({ shipmentId: demoShipment.id }),
+  });
+  assert.equal(duplicateDemoCreate.status, 409, 'duplicate active demo payments are blocked');
+
+  const crossAccountSettle = await request(`/payments/demo/${demoCreateBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: second.cookie },
+    body: JSON.stringify({}),
+  });
+  assert.equal(crossAccountSettle.status, 404, 'another shipper cannot settle this payment');
+
+  const demoSettle = await request(`/payments/demo/${demoCreateBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: first.cookie },
+    body: JSON.stringify({}),
+  });
+  assert.equal(demoSettle.status, 200, 'owner can explicitly simulate settlement');
+  const demoSettleBody = await demoSettle.json() as { payment: { status: string; paymentMethod?: string } };
+  assert.equal(demoSettleBody.payment.status, 'PAID');
+  assert.equal(demoSettleBody.payment.paymentMethod, 'DEMO_SIMULATED');
+
+  const repeatDemoSettle = await request(`/payments/demo/${demoCreateBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: first.cookie },
+    body: JSON.stringify({}),
+  });
+  assert.equal(repeatDemoSettle.status, 200, 'repeated settlement is idempotent');
+
   const me = await request('/auth/me', { headers: { cookie: first.cookie } });
   assert.equal(me.status, 200, 'valid session can be restored');
   const meBody = await me.json() as { user: { id: string }; email: string };
