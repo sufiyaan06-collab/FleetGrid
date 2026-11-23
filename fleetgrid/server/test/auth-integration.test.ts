@@ -383,6 +383,14 @@ try {
   });
   assert.equal(crossShipperPaymentRead.status, 404, 'another shipper cannot read the payment by ID');
 
+  const paymentTimelineResponse = await request('/shipments/shipment_a/timeline', {
+    headers: { cookie: `fleetgrid_session=${tokenA.token}` },
+  });
+  assert.equal(paymentTimelineResponse.status, 200, 'shipper can inspect its shipment audit timeline');
+  const paymentTimeline = await paymentTimelineResponse.json() as { events: Array<{ eventType: string; actorType: string }> };
+  assert.ok(paymentTimeline.events.some((event) => event.eventType === 'payment.demo_created'), 'demo checkout is recorded in the shipment audit timeline');
+  assert.ok(paymentTimeline.events.some((event) => event.eventType === 'payment.demo_settled' && event.actorType === 'BUSINESS'), 'demo settlement is attributed to the shipper in the audit timeline');
+
   const driverPayments = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
   assert.equal(driverPayments.status, 200);
   const paymentData = await driverPayments.json() as { payments: unknown[] };
