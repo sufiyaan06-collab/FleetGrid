@@ -226,8 +226,10 @@ export interface FleetSnapshot {
   notifications: Notification[];
 }
 
+export type BookableCapacityOffer = CapacityOffer & { origin: string; destination: string; pricePerT: number };
+
 export interface CapacityMatch {
-  offer: CapacityOffer;
+  offer: BookableCapacityOffer;
   truck: Truck;
   driverName: string | null;
   route: string;
@@ -248,7 +250,7 @@ export interface CapacityMatch {
 
 export interface SplitLeg {
   truck: Truck;
-  offer: CapacityOffer;
+  offer: BookableCapacityOffer;
   assignedT: number;
   spareAfterT: number;
   price: number;
