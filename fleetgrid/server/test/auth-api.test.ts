@@ -172,6 +172,14 @@ try {
   assert.equal(demoCreateBody.payment.provider, 'FleetGrid Demo Simulator');
   assert.equal(demoCreateBody.payment.amount, 1250, 'server ignores client-supplied amount and uses the stored shipment amount');
 
+  const crossAccountPaymentDetail = await request(`/payments/${demoCreateBody.payment.id}`, {
+    headers: { cookie: second.cookie },
+  });
+  assert.equal(crossAccountPaymentDetail.status, 404, 'another shipper cannot read this payment by ID');
+  const secondPaymentList = await request('/payments', { headers: { cookie: second.cookie } });
+  const secondPaymentListBody = await secondPaymentList.json() as { payments: Array<{ id: string }> };
+  assert.equal(secondPaymentListBody.payments.some((payment) => payment.id === demoCreateBody.payment.id), false, 'another shipper cannot see this payment in their list');
+
   const crossAccountDemoCreate = await request('/payments/demo/checkout', {
     method: 'POST',
     headers: { cookie: second.cookie },
