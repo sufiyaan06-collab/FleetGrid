@@ -226,7 +226,7 @@ export interface FleetSnapshot {
   notifications: Notification[];
 }
 
-export type BookableCapacityOffer = CapacityOffer & { origin: string; destination: string; pricePerT: number };
+export type BookableCapacityOffer = CapacityOffer & { route: string; origin: string; destination: string; pricePerT: number };
 
 export interface CapacityMatch {
   offer: BookableCapacityOffer;
