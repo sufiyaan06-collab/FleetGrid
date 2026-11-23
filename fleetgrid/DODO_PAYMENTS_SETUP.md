@@ -2,7 +2,7 @@
 
 > **Do not follow the old setup instructions.** FleetGrid does not use Dodo to collect shipment payments, transfer funds to independent carriers, or provide escrow. That marketplace settlement model is not supported by the Dodo account flow previously evaluated for this project.
 
-The Dodo checkout, status, confirmation, and webhook endpoints are disabled in the current application. They return an explicit disabled response and cannot initiate or settle a FleetGrid shipment payment. Do not add Dodo API keys, product IDs, webhook secrets, or live-payment flags to Render for this workflow.
+On the integration branch, the Node Dodo checkout/status/confirmation/webhook endpoints and the auxiliary Python Dodo payment routes return HTTP 410; the dormant Python payment service fails closed. These candidate changes are not live yet: the production services still track `main` and have not been redeployed. Do not add Dodo API keys, product IDs, webhook secrets, or live-payment flags to Render for this workflow.
 
 ## Current project demonstration
 
