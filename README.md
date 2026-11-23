@@ -17,7 +17,7 @@ The primary user-facing application lives in `fleetgrid/`:
 - **Control Tower** for network visibility, incident review, and recovery workflows.
 - **Payments Hub** with a clearly labelled server-controlled demo simulator.
 
-The Python FastAPI service in `backend/` remains as a separate auxiliary/legacy service. It is not the authentication authority for the primary React/Node application and is disabled in production by default (only root and health endpoints remain available) until it receives a separate security review. Production startup does not automatically run Alembic migrations.
+The Python FastAPI service in `backend/` remains a separate auxiliary/legacy service, not the authentication authority for the primary React/Node application. The integration-branch Render blueprint disables it in production by default (only root and health endpoints remain available) and removes automatic Alembic startup migrations. These are candidate settings; the live Render service still tracks `main` and has not received this update.
 
 ## Payment demonstration
 
