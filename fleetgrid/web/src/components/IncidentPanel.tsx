@@ -36,7 +36,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
 
   const live = incidents
     .filter((i) => LIVE_INCIDENT_STATES.has(i.status))
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''));
   const primary = live[0] ?? null;
   // Executing a plan resolves the incident, which would otherwise blank this panel
   // and hide the receipt. Fall back to the newest incident that has a plan so the
@@ -107,7 +107,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
   }
 
   const truck = trucks.find((t) => t.id === anchor.truckId);
-  const affected = shipments.filter((s) => anchor.affectedShipmentIds.includes(s.id));
+  const affected = shipments.filter((s) => (anchor.affectedShipmentIds ?? []).includes(s.id));
   const compatible = shownOptions.filter((o) => o.compatible);
   const rejected = shownOptions.filter((o) => !o.compatible);
   const resolved = primary === null;
@@ -159,7 +159,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
 
         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
           <Row label="Location" value={anchor.location} />
-          <Row label="Severity" value={anchor.severity} />
+          <Row label="Severity" value={anchor.severity ?? "Not recorded"} />
           <Row label="Reported" value={formatRelative(anchor.createdAt)} />
           <Row label="Source" value={anchor.source.replace('_', ' ')} />
         </dl>
@@ -283,7 +283,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
           <dl className="tabular mt-3 grid grid-cols-2 gap-2 text-[11px]">
             <div className="rounded border border-base-600 bg-base-900/60 px-2.5 py-1.5">
               <dt className="eyebrow">Recovery cost</dt>
-              <dd className="mt-0.5 text-ink-50">{formatMoney(planForIncident.cost)}</dd>
+              <dd className="mt-0.5 text-ink-50">{planForIncident.cost == null ? 'Not recorded' : formatMoney(planForIncident.cost)}</dd>
             </div>
             <div className="rounded border border-base-600 bg-base-900/60 px-2.5 py-1.5">
               <dt className="eyebrow">ETA impact</dt>
@@ -305,7 +305,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
                       </div>
                     ))
                   : [
-                      ['shipment', planForIncident.affectedShipmentIds.join(', ') || '—'],
+                      ['shipment', (planForIncident.affectedShipmentIds ?? []).join(', ') || '—'],
                       ['reassigned to', planForIncident.selectedTruckId ?? '—'],
                       ['approved by', planForIncident.approvedBy ?? '—'],
                     ].map(([key, value]) => (
