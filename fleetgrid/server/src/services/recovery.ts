@@ -58,7 +58,10 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
     throw ApiError.conflict('Recovery planning requires a recorded origin and destination for the affected truck.');
   }
 
-  const shipments = await db.shipments.find((s) => (incident.affectedShipmentIds ?? []).includes(s.id));
+  if (!incident.affectedShipmentIds?.length) {
+    throw ApiError.conflict('This legacy incident has no verified affected-shipment list. Review its shipment links before generating a recovery plan.');
+  }
+  const shipments = await db.shipments.find((s) => incident.affectedShipmentIds!.includes(s.id));
   const totalWeightT = round(shipments.reduce((sum, s) => sum + s.weightT, 0));
 
   return {
@@ -366,8 +369,13 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
       throw ApiError.conflict(`Recovery plan ${planId} has no selected replacement truck, so it cannot execute.`);
     }
 
-    if (!plan.affectedShipmentIds?.length) {
-      throw ApiError.conflict('This legacy recovery plan has no verified affected-shipment list and cannot be executed.');
+    if (
+      !plan.affectedShipmentIds?.length ||
+      plan.cost === null ||
+      plan.etaDeltaMinutes === null ||
+      !plan.options?.length
+    ) {
+      throw ApiError.conflict('This recovery plan has incomplete legacy shipment, option, cost, or ETA data and cannot be executed. Generate a fresh reviewed plan first.');
     }
     await db.recoveryPlans.update(planId, { status: 'EXECUTING', updatedAt: nowIso() });
 
