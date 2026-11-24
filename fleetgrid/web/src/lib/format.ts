@@ -16,14 +16,18 @@ export function formatMoney(amount: number, currency = 'INR'): string {
   }).format(amount);
 }
 
-export function formatTime(iso: string): string {
+export function formatTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export function formatRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+export function formatRelative(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const timestamp = new Date(iso).getTime();
+  if (Number.isNaN(timestamp)) return '—';
+  const diff = Date.now() - timestamp;
   const seconds = Math.round(diff / 1000);
   if (seconds < 5) return 'just now';
   if (seconds < 60) return `${seconds}s ago`;
