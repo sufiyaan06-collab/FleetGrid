@@ -39,7 +39,7 @@ export type RecoveryPlanStatus =
   | 'COMPLETED'
   | 'REJECTED';
 export type PaymentStatus = 'CREATED' | 'PENDING' | 'PAID' | 'FAILED';
-export type ProofStatus = 'NOT_ANCHORED' | 'PENDING' | 'CONFIRMED' | 'FAILED';
+export type ProofStatus = 'NOT_ANCHORED' | 'PENDING' | 'CONFIRMED' | 'FAILED' | 'FALLBACK_RECORDED';
 export type IncidentType =
   | 'TRUCK_BREAKDOWN'
   | 'ACCIDENT'
@@ -73,7 +73,7 @@ export interface Driver {
   name: string;
   phone: string | null;
   assignedTruckId: string | null;
-  status: 'AVAILABLE' | 'ON_JOURNEY' | 'OFF_DUTY';
+  status: 'AVAILABLE' | 'ON_JOURNEY' | 'OFF_DUTY' | 'INCIDENT_REPORTED';
   createdAt: string | null;
 }
 
@@ -88,6 +88,8 @@ export interface Truck {
   lng: number | null;
   speedKmph?: number | null;
   heading?: number | null;
+  locationStatus?: string | null;
+  lastLocationUpdate?: string | null;
   origin: string | null;
   destination: string | null;
   departureAt: string | null;
@@ -97,8 +99,8 @@ export interface Truck {
 
 export interface Shipment {
   id: string;
-  reference: string;
-  cargoName: string;
+  reference: string | null;
+  cargoName: string | null;
   shipperId: string;
   origin: string;
   destination: string;
@@ -107,10 +109,10 @@ export interface Shipment {
   status: ShipmentStatus;
   truckId: string | null;
   capacityOfferId: string | null;
-  price: number;
-  currency: string;
-  createdAt: string;
-  updatedAt: string;
+  price: number | null;
+  currency: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface CapacityOffer {
@@ -132,15 +134,15 @@ export interface Incident {
   truckId: string;
   type: IncidentType;
   location: string;
-  severity: Severity;
-  transcript: string;
-  structuredSummary: string;
+  severity: Severity | null;
+  transcript: string | null;
+  structuredSummary: string | null;
   status: IncidentStatus;
   source: 'DRIVER_APP' | 'VOICE' | 'OPERATOR' | 'SYSTEM' | 'LEGACY_IMPORT';
-  affectedShipmentIds: string[];
+  affectedShipmentIds: string[] | null;
   recoveryPlanId: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface ShipmentEvent {
@@ -150,9 +152,9 @@ export interface ShipmentEvent {
   truckId: string | null;
   eventType: string;
   payload: Record<string, unknown>;
-  actorType: string;
+  actorType: string | null;
   actorId: string | null;
-  timestamp: string;
+  timestamp: string | null;
   hash: string;
   blockchainTx: string | null;
   proofStatus: ProofStatus;
@@ -172,16 +174,16 @@ export interface RecoveryOption {
 export interface RecoveryPlan {
   id: string;
   incidentId: string;
-  affectedShipmentIds: string[];
-  options: RecoveryOption[];
+  affectedShipmentIds: string[] | null;
+  options: RecoveryOption[] | null;
   selectedTruckId: string | null;
-  cost: number;
-  etaDeltaMinutes: number;
+  cost: number | null;
+  etaDeltaMinutes: number | null;
   status: RecoveryPlanStatus;
   approvedBy: string | null;
   approvedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface Payment {
@@ -208,7 +210,7 @@ export interface Notification {
   type: string;
   message: string;
   status: 'PENDING' | 'UNREAD' | 'READ' | 'SENT';
-  createdAt: string;
+  createdAt: string | null;
 }
 
 export interface FleetSnapshot {
