@@ -35,7 +35,7 @@ export default function LandingPage() {
             {links.map((link) => <a key={link.href} href={link.href} className="text-[13px] font-medium text-slate-400 transition hover:text-white">{link.label}</a>)}
           </div>
           <div className="hidden items-center gap-3 md:flex">
-            <button onClick={() => go('LOGIN', 'BUSINESS')} className="rounded-lg border border-white/15 px-4 py-2.5 text-[13px] font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/[0.04] hover:text-white">Shipper sign in</button>
+            <button onClick={() => go('LOGIN', 'BUSINESS')} className="rounded-lg border border-emerald-300/25 px-4 py-2.5 text-[13px] font-semibold text-emerald-200 transition hover:border-emerald-300/45 hover:bg-emerald-300/[0.06]">Shipper sign in</button>
             <button onClick={() => go('LOGIN', 'DRIVER')} className="rounded-lg border border-white/15 px-4 py-2.5 text-[13px] font-semibold text-emerald-200 transition hover:border-emerald-300/40 hover:bg-emerald-300/[0.06]" >Driver sign in</button>
             <button onClick={() => go('LOGIN', 'CONTROL_TOWER')} className="rounded-lg border border-emerald-300/25 px-4 py-2.5 text-[13px] font-semibold text-emerald-200 transition hover:border-emerald-300/45 hover:bg-emerald-300/[0.06]">Administrator sign in</button>
             <button onClick={() => go('REGISTER')} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-400 px-4 text-[13px] font-bold text-[#062018] shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-300">Get started <Arrow /></button>
