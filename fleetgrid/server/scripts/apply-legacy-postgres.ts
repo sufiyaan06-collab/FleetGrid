@@ -81,7 +81,7 @@ async function main(): Promise<void> {
         );
         const sourceRows = Object.values(report.summary).reduce((sum, row) => sum + row.source, 0);
         const quarantinedRows = Object.values(report.summary).reduce((sum, row) => sum + row.quarantined, 0);
-        const ledger = prior.rows[0];
+        const ledger = prior.rows[0]!;
         if (
           sourceRows !== Number(ledger.source_rows) ||
           mapped.length !== Number(ledger.imported_rows) ||
