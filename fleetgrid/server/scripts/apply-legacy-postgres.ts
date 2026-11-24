@@ -162,7 +162,7 @@ async function main(): Promise<void> {
       tables: report.summary,
       legacyTablesPreserved: true,
       rawSourceRowsExported: false,
-    }, null, 2) + '\\n');
+    }, null, 2) + '\n');
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
