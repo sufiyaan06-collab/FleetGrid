@@ -52,6 +52,10 @@ assert.equal(driver?.createdAt,null);
 const truck=report.records.find(r=>r.sourceTable==='trucks')?.data;
 assert.equal(truck?.lat,null);
 assert.equal(truck?.lng,null);
+assert.equal(truck?.speedKmph,null);
+assert.equal(truck?.heading,null);
+assert.equal(truck?.locationStatus,null);
+assert.equal(truck?.lastLocationUpdate,null);
 assert.equal(truck?.origin,null);
 assert.equal(truck?.destination,null);
 
