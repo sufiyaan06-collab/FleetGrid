@@ -18,6 +18,9 @@ export function Login() {
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [forgotMode, setForgotMode] = useState(false);
+  const portalParam = new URLSearchParams(window.location.search).get('portal');
+  const expectedRole = portalParam === 'BUSINESS' || portalParam === 'DRIVER' || portalParam === 'CONTROL_TOWER' ? portalParam : undefined;
+  const portalLabel = expectedRole === 'BUSINESS' ? 'Shipper' : expectedRole === 'DRIVER' ? 'Driver' : expectedRole === 'CONTROL_TOWER' ? 'Admin / Operations' : 'FleetGrid';
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -57,7 +60,7 @@ export function Login() {
     setError(null);
     setNotice(null);
     try {
-      const session = await api.login({ email: email.trim().toLowerCase(), password });
+      const session = await api.login({ email: email.trim().toLowerCase(), password, ...(expectedRole ? { expectedRole } : {}) });
       adoptAccount(session.user.role === 'BUSINESS' ? 'BUSINESS' : session.user.role === 'DRIVER' ? 'DRIVER' : 'CONTROL_TOWER', session);
     } catch (err) {
       const message = (err as Error).message;
@@ -123,11 +126,9 @@ export function Login() {
       <button type="button" onClick={() => void setMode('LANDING')} className="mb-6 self-start text-2xs uppercase tracking-[0.14em] text-ink-500 hover:text-ink-200">
         ← Back to FleetGrid
       </button>
-      <h1 className="text-2xl font-semibold tracking-tight text-ink-50">Sign in to FleetGrid</h1>
-      <p className="mt-2 text-sm leading-relaxed text-ink-400">Use the email address and password you registered with.</p>
-      <div className="mt-4 rounded-md border border-healthy/25 bg-healthy/5 px-3 py-2.5 text-xs leading-relaxed text-ink-300">
-        <strong className="text-healthy">Admin / Operations accounts:</strong> sign in here using your assigned account. FleetGrid verifies your role and opens the Control Tower automatically. Admin access is not available through public sign-up.
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink-50">Sign in to {portalLabel}</h1>
+      <p className="mt-2 text-sm leading-relaxed text-ink-400">Use the email address and password registered for your {portalLabel} account.</p>
+      {expectedRole === 'CONTROL_TOWER' && <div className="mt-4 rounded-md border border-healthy/25 bg-healthy/5 px-3 py-2.5 text-xs leading-relaxed text-ink-300"><strong className="text-healthy">Administrator access:</strong> only authorised Admin / Operations accounts can enter this workspace. Admin access is not available through public sign-up.</div>}
       <form onSubmit={resetToken ? submitPasswordReset : forgotMode ? (event) => { event.preventDefault(); void requestPasswordReset(); } : submit} className="mt-6 rounded-lg border border-base-700 bg-base-800/60 p-5">
         {!resetToken && <div>
           <label className={labelCls} htmlFor="login-email">Email address</label>
