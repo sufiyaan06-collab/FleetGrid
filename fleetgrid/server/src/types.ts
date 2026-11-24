@@ -61,7 +61,7 @@ export type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type CapacityOfferStatus = 'OPEN' | 'HELD' | 'CLOSED';
 
 /** Master PRD §9 — proof must never be faked. `NOT_ANCHORED` is the honest pre-anchor state. */
-export type ProofStatus = 'NOT_ANCHORED' | 'PENDING' | 'CONFIRMED' | 'FAILED';
+export type ProofStatus = 'NOT_ANCHORED' | 'PENDING' | 'CONFIRMED' | 'FAILED' | 'FALLBACK_RECORDED';
 
 export type ActorType = 'SYSTEM' | 'AGENT' | 'OPERATOR' | 'DRIVER' | 'BUSINESS';
 
@@ -107,7 +107,7 @@ export interface Driver {
   name: string;
   phone: string | null;
   assignedTruckId: string | null;
-  status: 'AVAILABLE' | 'ON_JOURNEY' | 'OFF_DUTY';
+  status: 'AVAILABLE' | 'ON_JOURNEY' | 'OFF_DUTY' | 'INCIDENT_REPORTED';
   createdAt: string | null;
 }
 
@@ -122,6 +122,8 @@ export interface Truck {
   lng: number | null;
   speedKmph?: number | null;
   heading?: number | null;
+  locationStatus?: string | null;
+  lastLocationUpdate?: string | null;
   origin: string | null;
   destination: string | null;
   departureAt: string | null;
@@ -131,8 +133,8 @@ export interface Truck {
 
 export interface Shipment {
   id: string;
-  reference: string;
-  cargoName: string;
+  reference: string | null;
+  cargoName: string | null;
   shipperId: string;
   origin: string;
   destination: string;
@@ -141,10 +143,10 @@ export interface Shipment {
   status: ShipmentStatus;
   truckId: string | null;
   capacityOfferId: string | null;
-  price: number;
-  currency: string;
-  createdAt: string;
-  updatedAt: string;
+  price: number | null;
+  currency: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface CapacityOffer {
@@ -166,15 +168,15 @@ export interface Incident {
   truckId: string;
   type: IncidentType;
   location: string;
-  severity: Severity;
-  transcript: string;
-  structuredSummary: string;
+  severity: Severity | null;
+  transcript: string | null;
+  structuredSummary: string | null;
   status: IncidentStatus;
   source: 'DRIVER_APP' | 'VOICE' | 'OPERATOR' | 'SYSTEM' | 'LEGACY_IMPORT';
-  affectedShipmentIds: string[];
+  affectedShipmentIds: string[] | null;
   recoveryPlanId: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface ShipmentEvent {
@@ -184,9 +186,9 @@ export interface ShipmentEvent {
   truckId: string | null;
   eventType: string;
   payload: Record<string, unknown>;
-  actorType: ActorType;
+  actorType: ActorType | null;
   actorId: string | null;
-  timestamp: string;
+  timestamp: string | null;
   hash: string;
   blockchainTx: string | null;
   proofStatus: ProofStatus;
@@ -206,16 +208,16 @@ export interface RecoveryOption {
 export interface RecoveryPlan {
   id: string;
   incidentId: string;
-  affectedShipmentIds: string[];
-  options: RecoveryOption[];
+  affectedShipmentIds: string[] | null;
+  options: RecoveryOption[] | null;
   selectedTruckId: string | null;
-  cost: number;
-  etaDeltaMinutes: number;
+  cost: number | null;
+  etaDeltaMinutes: number | null;
   status: RecoveryPlanStatus;
   approvedBy: string | null;
   approvedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 /** A FleetGrid payment record. The current UI uses a demo simulator; it is not a real-money settlement. */
@@ -244,7 +246,7 @@ export interface Notification {
   type: string;
   message: string;
   status: 'PENDING' | 'UNREAD' | 'READ' | 'SENT';
-  createdAt: string;
+  createdAt: string | null;
 }
 
 /** Canonical realtime envelope pushed over `WS /realtime`. */
