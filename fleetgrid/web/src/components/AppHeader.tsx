@@ -39,7 +39,7 @@ export function AppHeader({ children }: AppHeaderProps) {
       : session.user.role === 'BUSINESS'
         ? MODES.filter((item) => ['BUSINESS', 'PAYMENTS', 'LIVE_MAP'].includes(item.id))
         : MODES.filter((item) => ['CONTROL_TOWER', 'PAYMENTS', 'LIVE_MAP'].includes(item.id));
-  const goHome = () => void setMode(session?.mode === 'authenticated' ? homeMode : 'LANDING');
+  const goHome = () => void setMode(session ? homeMode : 'LANDING');
 
   return (
     <>
