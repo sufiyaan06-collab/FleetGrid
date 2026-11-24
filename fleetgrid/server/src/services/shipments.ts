@@ -466,7 +466,7 @@ export interface DriverOffer {
   shipperName: string | null;
   route: string;
   estimatedPay: number;
-  currency: string;
+  currency: string | null;
   /** True while the driver still has to answer; false once it is already accepted. */
   awaitingDriver: boolean;
 }
@@ -528,7 +528,7 @@ export async function driverOffers(driverId: string): Promise<{
 
 export async function shipmentTimeline(shipmentId: string) {
   const shipment = await getShipment(shipmentId);
-  const incidents = await db.incidents.find((i) => i.affectedShipmentIds.includes(shipmentId));
+  const incidents = await db.incidents.find((i) => (i.affectedShipmentIds ?? []).includes(shipmentId));
   const incidentIds = new Set(incidents.map((i) => i.id));
 
   // A shipment timeline = its own events + its truck's events + events of the
@@ -541,11 +541,11 @@ export async function shipmentTimeline(shipmentId: string) {
 
   const timeline = [...ownEvents, ...truckEvents, ...incidentEvents]
     .filter((event, index, all) => all.findIndex((e) => e.id === event.id) === index)
-    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+    .sort((a, b) => Date.parse(a.timestamp ?? '') - Date.parse(b.timestamp ?? ''));
 
   const truck = shipment.truckId ? await db.trucks.findById(shipment.truckId) : undefined;
   const payments = await db.payments.find((p) => p.shipmentId === shipmentId);
-  const recoveryPlans = await db.recoveryPlans.find((p) => p.affectedShipmentIds.includes(shipmentId));
+  const recoveryPlans = await db.recoveryPlans.find((p) => (p.affectedShipmentIds ?? []).includes(shipmentId));
   const notifications = await db.notifications.find((n) => n.recipientId === shipment.shipperId);
 
   return {
