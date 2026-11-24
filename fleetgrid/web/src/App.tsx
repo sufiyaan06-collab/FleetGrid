@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { FleetProvider, useFleet } from './store/FleetContext';
 import { ControlTower } from './views/ControlTower';
 import { LiveMapView } from './views/LiveMapView';
@@ -10,7 +11,22 @@ import { Login } from './views/Login';
 import { RoleSelect } from './views/RoleSelect';
 
 function Router() {
-  const { mode } = useFleet();
+  const { mode, session, setMode } = useFleet();
+  const homeMode = session?.user.role === 'BUSINESS'
+    ? 'BUSINESS'
+    : session?.user.role === 'DRIVER'
+      ? 'DRIVER'
+      : 'CONTROL_TOWER';
+  const allowedModes = session?.user.role === 'BUSINESS'
+    ? ['BUSINESS', 'PAYMENTS', 'LIVE_MAP']
+    : session?.user.role === 'DRIVER'
+      ? ['DRIVER', 'LIVE_MAP']
+      : ['CONTROL_TOWER', 'PAYMENTS', 'LIVE_MAP'];
+  const blockedForSignedInUser = session?.mode === 'authenticated' && !allowedModes.includes(mode ?? '');
+  useEffect(() => {
+    if (blockedForSignedInUser) void setMode(homeMode);
+  }, [blockedForSignedInUser, homeMode, setMode]);
+  if (blockedForSignedInUser) return null;
   let screen;
   if (mode === 'LANDING') screen = <LandingView />;
   else if (mode === 'REGISTER') screen = <Register />;
