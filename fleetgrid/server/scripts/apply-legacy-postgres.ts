@@ -138,12 +138,12 @@ async function main(): Promise<void> {
     await client.query(`CREATE INDEX IF NOT EXISTS fleetgrid_records_collection_idx ON public.${TARGET} (collection)`);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS fleetgrid_auth_email_unique_idx
-      ON public.${TARGET} (LOWER(data->>'email'))
+      ON public.${TARGET} ((LOWER(data->>'email')))
       WHERE collection = 'auth-accounts'
     `);
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS fleetgrid_active_payment_shipment_unique_idx
-      ON public.${TARGET} (data->>'shipmentId')
+      ON public.${TARGET} ((data->>'shipmentId'))
       WHERE collection = 'payments' AND data->>'status' IN ('CREATED', 'PENDING', 'PAID')
     `);
 
