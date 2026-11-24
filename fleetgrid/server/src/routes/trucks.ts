@@ -185,8 +185,19 @@ trucksRouter.post(
     const finalLat = lat ?? latitude;
     const finalLng = lng ?? longitude;
     const finalSpeed = speed_kmph ?? speedKmph;
-    if (typeof finalLat !== 'number' || typeof finalLng !== 'number') {
-      res.status(400).json({ error: { message: 'latitude and longitude are required numbers' } });
+    if (
+      typeof finalLat !== 'number' || !Number.isFinite(finalLat) || finalLat < -90 || finalLat > 90 ||
+      typeof finalLng !== 'number' || !Number.isFinite(finalLng) || finalLng < -180 || finalLng > 180
+    ) {
+      res.status(400).json({ error: { message: 'Valid latitude (-90 to 90) and longitude (-180 to 180) are required.' } });
+      return;
+    }
+    if (finalSpeed !== undefined && (typeof finalSpeed !== 'number' || !Number.isFinite(finalSpeed) || finalSpeed < 0 || finalSpeed > 250)) {
+      res.status(400).json({ error: { message: 'Speed must be a valid number between 0 and 250 km/h.' } });
+      return;
+    }
+    if (heading !== undefined && (typeof heading !== 'number' || !Number.isFinite(heading) || heading < 0 || heading > 360)) {
+      res.status(400).json({ error: { message: 'Heading must be a valid number between 0 and 360 degrees.' } });
       return;
     }
     const updated = await updateTruckLocation(id, finalLat, finalLng, finalSpeed, heading);
