@@ -54,7 +54,7 @@ export function Business() {
 
   const shipperId = session?.organization?.id ?? snapshot.organizations.find((o) => o.type === 'SHIPPER')?.id ?? '';
   const myShipments = useMemo(
-    () => snapshot.shipments.filter((s) => s.shipperId === shipperId).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+    () => snapshot.shipments.filter((s) => s.shipperId === shipperId).sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '')),
     [snapshot.shipments, shipperId],
   );
   const activeShipment = useMemo(
@@ -68,7 +68,7 @@ export function Business() {
     for (const e of snapshot.events) {
       if (!e.shipmentId) continue;
       const held = latest.get(e.shipmentId);
-      if (!held || Date.parse(e.timestamp) >= Date.parse(held.timestamp)) latest.set(e.shipmentId, e);
+      if (!held || Date.parse(e.timestamp ?? '') >= Date.parse(held.timestamp ?? '')) latest.set(e.shipmentId, e);
     }
     return (id: string): ShipmentEvent | undefined => latest.get(id);
   }, [snapshot.events]);
@@ -690,7 +690,7 @@ export function Business() {
                     <SummaryRow label="Shipment ID" value={confirmed.id} mono />
                     <SummaryRow label="Truck ID" value={confirmed.truckId ?? '—'} mono />
                     <SummaryRow label="Current status" value={confirmed.status} />
-                    <SummaryRow label="Cargo" value={confirmed.cargoName} />
+                    <SummaryRow label="Cargo" value={confirmed.cargoName ?? 'Not recorded'} />
                     <SummaryRow label="Weight" value={formatT(confirmed.weightT)} />
                     <SummaryRow
                       label="Route"
