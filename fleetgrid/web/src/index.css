@@ -243,7 +243,6 @@ body:has(.fg-sidebar) .panel .bg-base-800, body:has(.fg-sidebar) .panel .bg-base
 body:has(.fg-sidebar) .panel .text-ink-50, body:has(.fg-sidebar) .panel .text-ink-100 { color:#1b2d45 !important; }
 body:has(.fg-sidebar) .panel .text-ink-300 { color:#52657d !important; }
 body:has(.fg-sidebar) .panel .text-ink-400, body:has(.fg-sidebar) .panel .text-ink-500 { color:#7c8ca1 !important; }
-body:has(.fg-sidebar) .panel .border-base-600, body:has(.fg-sidebar) .panel .border-base-700 { border-color:#e7edf4 !important; }
 body:has(.fg-sidebar) .panel .bg-base-700 { background-color:#edf2f7 !important; }
 body:has(.fg-sidebar) .panel .eyebrow { color:#8291a5; }
 body:has(.fg-sidebar) .panel .panel-header h2 { color:#1b2d45 !important; }
