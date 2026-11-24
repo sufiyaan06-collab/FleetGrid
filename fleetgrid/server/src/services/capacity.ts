@@ -1,4 +1,5 @@
 import { db } from '../store/db.js';
+import { isProductionEnvironment } from '../config.js';
 import { ApiError } from '../lib/errors.js';
 import { nowIso, round } from '../lib/ids.js';
 import { runExclusive } from '../lib/mutex.js';
@@ -83,11 +84,15 @@ export async function syncOfferForTruck(truck: Truck, status?: CapacityOffer['st
  * A truck is a candidate when it still has spare tonnage and is not blocked.
  */
 export async function searchCapacity(input: CapacitySearchInput): Promise<CapacityMatch[]> {
-  const [offers, trucks, drivers] = await Promise.all([
+  const [offers, trucks, drivers, users, organizations, authAccounts] = await Promise.all([
     db.capacityOffers.get(),
     db.trucks.get(),
     db.drivers.get(),
+    db.users.get(),
+    db.organizations.get(),
+    db.authAccounts.get(),
   ]);
+  const production = isProductionEnvironment();
 
   const origin = input.origin ? canonicalLocation(input.origin) : null;
   const destination = input.destination ? canonicalLocation(input.destination) : null;
@@ -100,14 +105,42 @@ export async function searchCapacity(input: CapacitySearchInput): Promise<Capaci
     const truck = trucks.find((t) => t.id === offer.truckId);
     if (!truck) continue;
 
+    // Capacity is only marketable when a real, active driver is linked to this
+    // truck and the driver, user, and fleet operator all agree on ownership.
+    // In production, the driver's own credential account must also be verified;
+    // imported legacy/demo identities are not eligible to receive live requests.
+    const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
+    if (!driver || driver.status !== 'AVAILABLE' || driver.assignedTruckId !== truck.id) continue;
+
+    const driverUser = users.find(
+      (user) =>
+        user.id === driver.userId &&
+        user.role === 'DRIVER' &&
+        user.organizationId === truck.organizationId,
+    );
+    if (!driverUser || driver.organizationId !== truck.organizationId) continue;
+
+    const operator = organizations.find(
+      (organization) =>
+        organization.id === truck.organizationId &&
+        organization.type === 'FLEET_OPERATOR' &&
+        organization.status === 'ACTIVE',
+    );
+    if (!operator) continue;
+
+    if (
+      production &&
+      !authAccounts.some((account) => account.id === driver.userId && Boolean(account.emailVerifiedAt))
+    ) {
+      continue;
+    }
+
     const blockers: string[] = [];
     if (offer.status === 'CLOSED') blockers.push('Capacity offer is closed');
     if (BLOCKING_TRUCK_STATES.has(truck.status)) {
       blockers.push(`Truck is ${truck.status.replace('_', ' ').toLowerCase()}`);
     }
     if (offer.availableT <= 0) blockers.push('No spare capacity remaining');
-
-    const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
 
     // A truck running the whole lane also passes the intermediate stops, so a
     // Bengaluru → Hosur request is legitimately served by a Bengaluru → Chennai truck.
