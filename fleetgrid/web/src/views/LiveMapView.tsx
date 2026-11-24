@@ -26,7 +26,7 @@ export function LiveMapView() {
       : 0;
 
   return (
-    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-base-950 text-ink-100">
+    <div className="fg-live-map-shell relative flex h-screen flex-col overflow-hidden bg-base-950 text-ink-100">
       <AppHeader />
 
       {/* Main Workspace */}
@@ -37,13 +37,14 @@ export function LiveMapView() {
           <div className="border-b border-base-600 p-4">
             <div className="flex items-center justify-between">
               <span className="font-mono text-2xs font-semibold uppercase tracking-wider text-ink-400">
-                Live GPS Fleet
+                Fleet snapshot
               </span>
               <span className="flex items-center gap-1.5 rounded-full border border-healthy/40 bg-healthy/10 px-2 py-0.5 font-mono text-[10px] text-healthy">
                 <span className="h-1.5 w-1.5 rounded-full bg-healthy animate-pulse" />
-                {activeCount} Active
+                {activeCount} Moving
               </span>
             </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-ink-500">Stored truck coordinates. Driver phone GPS sharing is not yet active.</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded border border-base-700 bg-base-850 p-2">
                 <div className="font-mono text-[9px] uppercase tracking-wider text-ink-500">Avg Speed</div>
