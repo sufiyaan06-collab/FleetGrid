@@ -54,21 +54,59 @@ async function main(): Promise<void> {
     // Safe on every service restart: after a successful import, verify the ledger
     // and target count, then exit without touching source or target records.
     if (await tableExists(client, LEDGER)) {
-      const prior = await client.query<{ imported_rows: number }>(
-        `SELECT imported_rows FROM public.${LEDGER} WHERE id = $1`,
+      const prior = await client.query<{
+        source_rows: number;
+        imported_rows: number;
+        quarantined_rows: number;
+      }>(
+        `SELECT source_rows, imported_rows, quarantined_rows
+         FROM public.${LEDGER} WHERE id = $1`,
         ['legacy-python-postgres-v1'],
       );
       if (prior.rows.length === 1) {
-        const targetCount = await client.query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count FROM public.${TARGET}`,
-        );
-        if (Number(targetCount.rows[0]?.count ?? 0) !== Number(prior.rows[0]?.imported_rows ?? -1)) {
-          throw new Error('Existing import ledger does not match fleetgrid_records. Refusing to start.');
+        // The live application legitimately adds records after migration (new
+        // accounts, organizations, shipments, etc.). Do not compare the entire
+        // target-table count with the one-time import count. Instead, remap the
+        // preserved legacy source and verify that every originally imported
+        // (collection, id) pair still exists. This detects missing migrated
+        // records without rejecting new application data.
+        const snapshot: LegacyTables = {};
+        for (const table of TABLES) {
+          const rows = await client.query<LegacyRow>(`SELECT * FROM public."${table}" ORDER BY id`);
+          snapshot[table] = rows.rows;
         }
+        const report = mapLegacySnapshot(snapshot);
+        const mapped = report.records.filter(
+          (record) => record.outcome === 'mapped' && record.collection && record.data,
+        );
+        const sourceRows = Object.values(report.summary).reduce((sum, row) => sum + row.source, 0);
+        const quarantinedRows = Object.values(report.summary).reduce((sum, row) => sum + row.quarantined, 0);
+        const ledger = prior.rows[0];
+        if (
+          sourceRows !== Number(ledger.source_rows) ||
+          mapped.length !== Number(ledger.imported_rows) ||
+          quarantinedRows !== Number(ledger.quarantined_rows)
+        ) {
+          throw new Error('Legacy source counts no longer match the approved import ledger. Refusing to start.');
+        }
+
+        const expectedCollections = mapped.map((record) => record.collection!);
+        const expectedIds = mapped.map((record) => record.sourceId);
+        const verified = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+           FROM unnest($1::text[], $2::text[]) AS expected(collection, id)
+           JOIN public.${TARGET} target USING (collection, id)`,
+          [expectedCollections, expectedIds],
+        );
+        if (Number(verified.rows[0]?.count ?? 0) !== mapped.length) {
+          throw new Error('One or more originally imported records are missing from fleetgrid_records. Refusing to start.');
+        }
+
         await client.query('COMMIT');
         process.stdout.write(JSON.stringify({
           mode: 'ALREADY_IMPORTED_VERIFIED',
-          importedRows: Number(prior.rows[0]?.imported_rows ?? 0),
+          importedRows: mapped.length,
+          additionalApplicationRowsAllowed: true,
           noChangesMade: true,
         }, null, 2) + '\\n');
         return;
