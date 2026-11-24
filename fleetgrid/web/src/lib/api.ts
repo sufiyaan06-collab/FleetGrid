@@ -75,7 +75,7 @@ export const api = {
   health: () => request<Record<string, unknown>>('/health'),
   state: () => request<FleetSnapshot>('/state'),
   demoLogin: (role: Role) => post<DemoLoginResponse>('/auth/demo-login', { role }),
-  login: (input: { email: string; password: string }) => post<DemoLoginResponse>('/auth/login', input),
+  login: (input: { email: string; password: string; expectedRole?: 'BUSINESS' | 'DRIVER' | 'CONTROL_TOWER' }) => post<DemoLoginResponse>('/auth/login', input),
   me: () => request<{ ok: true; user: DemoLoginResponse['user']; organization: DemoLoginResponse['organization']; driver: DemoLoginResponse['driver']; email: string }>('/auth/me'),
   logout: () => post<{ ok: true }>('/auth/logout'),
   signup: (input: {
