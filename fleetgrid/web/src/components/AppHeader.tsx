@@ -27,18 +27,24 @@ export function AppHeader({ children }: AppHeaderProps) {
   const { connection, mode, setMode, session, signOut } = useFleet();
   const [voiceAssistantOpen, setVoiceAssistantOpen] = useState(false);
   const copy = CONNECTION_COPY[connection];
+  const homeMode: Mode = session?.user.role === 'DRIVER'
+    ? 'DRIVER'
+    : session?.user.role === 'BUSINESS'
+      ? 'BUSINESS'
+      : 'CONTROL_TOWER';
   const visibleModes = !session
     ? MODES
     : session.user.role === 'DRIVER'
-      ? MODES.filter((item) => ['LANDING', 'DRIVER', 'LIVE_MAP'].includes(item.id))
+      ? MODES.filter((item) => ['DRIVER', 'LIVE_MAP'].includes(item.id))
       : session.user.role === 'BUSINESS'
-        ? MODES.filter((item) => ['LANDING', 'BUSINESS', 'PAYMENTS', 'LIVE_MAP'].includes(item.id))
-        : MODES.filter((item) => ['LANDING', 'CONTROL_TOWER', 'PAYMENTS', 'LIVE_MAP'].includes(item.id));
+        ? MODES.filter((item) => ['BUSINESS', 'PAYMENTS', 'LIVE_MAP'].includes(item.id))
+        : MODES.filter((item) => ['CONTROL_TOWER', 'PAYMENTS', 'LIVE_MAP'].includes(item.id));
+  const goHome = () => void setMode(session?.mode === 'authenticated' ? homeMode : 'LANDING');
 
   return (
     <>
       <aside className="fg-sidebar">
-        <button type="button" onClick={() => void setMode('LANDING')} className="fg-brand" title="FleetGrid overview">
+        <button type="button" onClick={goHome} className="fg-brand" title="FleetGrid workspace">
           <FleetMark />
           <span className="min-w-0 text-left">
             <strong>FLEETGRID</strong>
@@ -94,7 +100,7 @@ export function AppHeader({ children }: AppHeaderProps) {
         {children}
       </aside>
       <div className="fg-mobilebar">
-        <button type="button" onClick={() => void setMode('LANDING')} className="fg-mobile-brand"><FleetMark /><strong>FLEETGRID</strong></button>
+        <button type="button" onClick={goHome} className="fg-mobile-brand"><FleetMark /><strong>FLEETGRID</strong></button>
         <span className="fg-mobile-status"><i className={cn('fg-connection-dot', copy.dot)} />{copy.label}</span>
         <nav className="fg-mobile-nav" aria-label="Mobile navigation">
           {visibleModes.map((item) => (
