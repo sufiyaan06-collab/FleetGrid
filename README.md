@@ -90,12 +90,12 @@ Production is configured to stay on the existing Render PostgreSQL database:
 - `DATABASE_URL` is required in production.
 - `FLEETGRID_POSTGRES_SCHEMA_READY=true` is required before the Node app initializes its JSONB table and indexes.
 - Keep `AUTO_SEED=false`; deterministic demo records must not be inserted into production.
-- The legacy relational tables remain the source of truth until the additive import is explicitly approved and reconciled.
+- The additive legacy import completed on 2026-11-24: 12 source rows were reviewed, 11 compatible records were imported, and 1 AUDITOR user without an organization was quarantined. The original normalized tables remain untouched.
 - `import:legacy:dry-run` reads the legacy tables in a read-only transaction and prints only aggregate counts, schema metadata, and redacted issue codes.
 - `import:legacy:apply` is a separate one-time, approval-gated operation. It writes mapped records only to `fleetgrid_records` and a metadata-only ledger in the same Render database. It refuses a non-empty target on first run, verifies the ledger and becomes a no-op on later restarts, and never updates or deletes legacy rows.
 - The current Render Free PostgreSQL database expires on **2026-12-15**. It can support the near-term project demonstration, but it is not durable long-term production storage. No paid resource has been created.
 
-The JSON-to-PostgreSQL script migrates Node JSON collections only; it is not the legacy relational importer. The production legacy import has not been run. See:
+The JSON-to-PostgreSQL script migrates Node JSON collections only; it is not the legacy relational importer. The production legacy import is complete and verified against the import ledger and target row counts. Legacy user credentials/sessions were not migrated; existing users must establish new credentials through the credential-auth flow. See:
 
 - [Database compatibility decisions](fleetgrid/DATABASE_COMPATIBILITY_DECISIONS_2026-11-23.md)
 - [Legacy database migration plan](fleetgrid/LEGACY_DATABASE_MIGRATION_PLAN.md)
@@ -121,4 +121,4 @@ The GitHub Actions workflow runs the frontend/backend build, backend integration
 
 ## Deployment status
 
-The integration branch is verified separately from the live production deployment. The live Render Node service still tracks `main` and auto-deploys commits to that branch. Do not merge or push to `main` until database migration, email configuration, and production cutover checks are approved.
+The Render Node service is live on the integration release branch, uses the existing Render PostgreSQL database, and has automatic deploys disabled. The original normalized tables were preserved. The database is on a time-limited Free plan expiring 2026-12-15; select a durable plan or migrate before expiry. Email delivery still requires a verified Resend sender and production secrets. Do not merge or push to `main` until email configuration and production cutover checks are approved.
