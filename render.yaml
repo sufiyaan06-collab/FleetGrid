@@ -47,10 +47,10 @@ services:
         fromDatabase:
           name: fleetgrid-db
           property: connectionString
-      # The startup command runs the guarded importer first. It fails closed until
-      # FLEETGRID_LEGACY_IMPORT_APPROVED=true is explicitly set in Render.
+      # Initial one-time import has completed. The importer verifies its ledger
+      # and is a no-op on restart; approval remains disabled for any first-time write.
       - key: FLEETGRID_LEGACY_IMPORT_APPROVED
-        value: "true"
+        value: "false"
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 
