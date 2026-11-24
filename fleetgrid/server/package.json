@@ -17,7 +17,8 @@
     "migrate:postgres": "tsx scripts/migrate-json-to-postgres.ts",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "inspect:legacy": "tsx scripts/inspect-legacy-postgres.ts",
-    "import:legacy:dry-run": "tsx scripts/import-legacy-postgres.ts"
+    "import:legacy:dry-run": "tsx scripts/import-legacy-postgres.ts",
+    "import:legacy:apply": "tsx scripts/apply-legacy-postgres.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
