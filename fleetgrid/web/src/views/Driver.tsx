@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../lib/api';
 import { flashClassFor } from '../lib/flash';
 import { useFleet } from '../store/FleetContext';
@@ -74,6 +74,9 @@ export function Driver() {
   const [sosModalOpen, setSosModalOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [selectedSosReason, setSelectedSosReason] = useState(EMERGENCY_REASONS[0]?.id ?? 'engine_fire');
+  const [gpsSharing, setGpsSharing] = useState(false);
+  const [gpsMessage, setGpsMessage] = useState('Location sharing is off.');
+  const lastGpsSentAt = useRef(0);
 
   const [incidentType, setIncidentType] = useState<IncidentType>('TRUCK_BREAKDOWN');
   const [location, setLocation] = useState('');
@@ -107,6 +110,57 @@ export function Driver() {
       cancelled = true;
     };
   }, [driverId, snapshot]);
+
+  useEffect(() => {
+    if (!gpsSharing || session?.user.role !== 'DRIVER') return;
+    if (!truckId) {
+      setGpsMessage('No truck is assigned to your driver account yet.');
+      setGpsSharing(false);
+      return;
+    }
+    if (!('geolocation' in navigator)) {
+      setGpsMessage('This device or browser does not support GPS location.');
+      setGpsSharing(false);
+      return;
+    }
+
+    let active = true;
+    setGpsMessage('Waiting for your device GPS location…');
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (!active) return;
+        const now = Date.now();
+        if (now - lastGpsSentAt.current < 5000) return;
+        lastGpsSentAt.current = now;
+        const coords = position.coords;
+        void api.updateTruckLocation(truckId, {
+          lat: coords.latitude,
+          lng: coords.longitude,
+          ...(coords.speed != null && Number.isFinite(coords.speed) ? { speedKmph: Math.max(0, coords.speed * 3.6) } : {}),
+          ...(coords.heading != null && Number.isFinite(coords.heading) ? { heading: coords.heading } : {}),
+        }).then(() => {
+          if (active) setGpsMessage(`Sharing your location · accuracy ±${Math.round(coords.accuracy)} m`);
+        }).catch((err: Error) => {
+          if (active) setGpsMessage(`Location update failed: ${err.message}`);
+        });
+      },
+      (err) => {
+        if (!active) return;
+        setGpsMessage(err.code === err.PERMISSION_DENIED
+          ? 'Location permission was denied. Allow location access in your browser settings to share GPS.'
+          : err.code === err.POSITION_UNAVAILABLE
+            ? 'Your device GPS location is currently unavailable.'
+            : 'GPS request timed out. Keep location services enabled and try again.');
+        setGpsSharing(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
+    );
+
+    return () => {
+      active = false;
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [gpsSharing, session?.user.role, truckId]);
 
   const pending = queue?.pending ?? [];
   const accepted = queue?.accepted ?? [];
@@ -307,6 +361,40 @@ export function Driver() {
                 />
               )}
             </div>
+
+            {session?.user.role === 'DRIVER' && (
+              <section className="rounded-lg border border-base-600 bg-base-900/90 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="eyebrow">Driver GPS sharing</div>
+                    <p className="mt-1 text-xs leading-relaxed text-ink-300">
+                      Share this device's location with your assigned fleet's Control Tower while you are on duty.
+                      Your browser will ask for permission. You can stop sharing at any time.
+                    </p>
+                    <p className="mt-2 text-[11px] text-ink-400" aria-live="polite">{gpsMessage}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!truckId}
+                    onClick={() => {
+                      if (gpsSharing) {
+                        setGpsSharing(false);
+                        setGpsMessage('Location sharing stopped.');
+                      } else {
+                        lastGpsSentAt.current = 0;
+                        setGpsSharing(true);
+                      }
+                    }}
+                    className={cn(
+                      'shrink-0 rounded-md px-4 py-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                      gpsSharing ? 'border border-danger/50 bg-danger/10 text-danger hover:bg-danger/20' : 'bg-healthy text-base-950 hover:bg-healthy/90',
+                    )}
+                  >
+                    {gpsSharing ? 'Stop sharing' : 'Enable location sharing'}
+                  </button>
+                </div>
+              </section>
+            )}
 
             {/* CRITICAL SOS ACTIVE BANNER */}
             {isSosIncident && (
