@@ -44,7 +44,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
   // so a page reload still shows it.
   const settled = [...incidents]
     .filter((i) => i.recoveryPlanId)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+    .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''))[0];
   const anchor = primary ?? settled ?? null;
   const localPlan = plan && anchor && plan.incidentId === anchor.id ? plan : null;
   const planForIncident = localPlan ?? plans.find((p) => p.incidentId === anchor?.id) ?? null;
