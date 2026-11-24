@@ -239,7 +239,6 @@ body:has(.fg-sidebar) .bg-base-850, body:has(.fg-sidebar) .bg-base-800 { backgro
 body:has(.fg-sidebar) .bg-base-750, body:has(.fg-sidebar) .bg-base-700 { background-color:#f0f4f8 !important; }
 body:has(.fg-sidebar) .border-base-600, body:has(.fg-sidebar) .border-base-700 { border-color:#e4ebf2 !important; }
 body:has(.fg-sidebar) .divide-base-600 > :not([hidden]) ~ :not([hidden]) { border-color:#e7edf4 !important; }
-body:has(.fg-sidebar) .panel .bg-base-800, body:has(.fg-sidebar) .panel .bg-base-850 { background-color:#fbfcfe !important; }
 body:has(.fg-sidebar) .panel .text-ink-50, body:has(.fg-sidebar) .panel .text-ink-100 { color:#1b2d45 !important; }
 body:has(.fg-sidebar) .panel .text-ink-300 { color:#52657d !important; }
 body:has(.fg-sidebar) .panel .text-ink-400, body:has(.fg-sidebar) .panel .text-ink-500 { color:#7c8ca1 !important; }
