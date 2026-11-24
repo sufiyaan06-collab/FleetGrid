@@ -116,6 +116,10 @@ export const api = {
   resetDemo: () => post<{ ok: true; trucks: number; shipments: number }>('/demo/reset'),
 
   trucks: () => request<{ trucks: Truck[] }>('/trucks'),
+  updateTruckLocation: (id: string, input: { lat: number; lng: number; speedKmph?: number; heading?: number }) =>
+    post<{ status: string; truck_id: string; latitude: number; longitude: number; speed_kmph: number; heading: number }>(
+      `/trucks/${encodeURIComponent(id)}/location`, input,
+    ),
   truck: (id: string) => request<{ truck: Truck; shipments: Shipment[]; incidents: Incident[] }>(`/trucks/${id}`),
   depart: (id: string, driverId?: string) =>
     post<{ ok: true; truck: Truck; truckStatus: string; shipments: Shipment[] }>(
