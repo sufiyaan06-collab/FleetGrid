@@ -50,7 +50,7 @@ services:
       # The startup command runs the guarded importer first. It fails closed until
       # FLEETGRID_LEGACY_IMPORT_APPROVED=true is explicitly set in Render.
       - key: FLEETGRID_LEGACY_IMPORT_APPROVED
-        value: "false"
+        value: "true"
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 
