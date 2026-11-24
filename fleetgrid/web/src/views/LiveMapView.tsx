@@ -44,7 +44,7 @@ export function LiveMapView() {
                 {activeCount} Moving
               </span>
             </div>
-            <p className="mt-2 text-[10px] leading-relaxed text-ink-500">Stored truck coordinates. Driver phone GPS sharing is not yet active.</p>
+            <p className="mt-2 text-[10px] leading-relaxed text-ink-500">Positions update when a signed-in driver enables GPS sharing. Other vehicles may show their last saved coordinates.</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded border border-base-700 bg-base-850 p-2">
                 <div className="font-mono text-[9px] uppercase tracking-wider text-ink-500">Avg Speed</div>
