@@ -235,6 +235,7 @@ authRouter.post(
 const credentialSchema = z.object({
   email: z.string().email().max(254),
   password: z.string().min(1).max(128),
+  expectedRole: z.enum(['BUSINESS', 'DRIVER', 'CONTROL_TOWER']).optional(),
 });
 
 authRouter.post(
@@ -271,6 +272,11 @@ authRouter.post(
 
     const user = await db.users.findById(account.id);
     if (!user) throw new AuthApiError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect.');
+    if (body.expectedRole && user.role !== body.expectedRole) {
+      const taskName = body.expectedRole === 'BUSINESS' ? 'Shipper' : body.expectedRole === 'DRIVER' ? 'Driver' : 'Admin / Operations';
+      const actualTask = user.role === 'BUSINESS' ? 'Shipper' : user.role === 'DRIVER' ? 'Driver' : 'Admin / Operations';
+      throw new AuthApiError(403, 'WRONG_ACCOUNT_TYPE', `This account is registered for the ${actualTask} workspace, not ${taskName}. Please use the ${actualTask} sign-in option.`);
+    }
     const session = issueSessionToken();
     await db.authAccounts.update(account.id, {
       sessionTokenHash: session.tokenHash,
