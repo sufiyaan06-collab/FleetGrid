@@ -11,11 +11,18 @@ export function PaymentsView() {
   const { snapshot, refresh, session } = useFleet();
   const { shipments, payments = [] } = snapshot;
 
-  // Payment is collected only after the driver accepts the shipment.
-  const payableShipments = useMemo(
-    () => shipments.filter((s: Shipment) => s.status === 'CONFIRMED'),
-    [shipments],
-  );
+  // Demo checkout is available only for driver-confirmed shipments without
+  // an active or completed payment. Failed demo attempts may be retried.
+  const payableShipments = useMemo(() => {
+    const blockedShipmentIds = new Set(
+      payments
+        .filter((p: Payment) => p.shipmentId && ['PENDING', 'CREATED', 'PAID'].includes(p.status))
+        .map((p: Payment) => p.shipmentId as string),
+    );
+    return shipments.filter(
+      (s: Shipment) => s.status === 'CONFIRMED' && !blockedShipmentIds.has(s.id),
+    );
+  }, [shipments, payments]);
   const [selectedShipmentId, setSelectedShipmentId] = useState<string>('');
   useEffect(() => {
     if (!payableShipments.some((s) => s.id === selectedShipmentId) && payableShipments[0]) {
@@ -46,10 +53,16 @@ export function PaymentsView() {
     Boolean(currency && /^[A-Z]{3}$/.test(currency));
 
   // Metrics
-  const totalSettled = payments
-    .filter((p: Payment) => p.status === 'PAID' && p.currency === currency)
-    .reduce((acc: number, p: Payment) => acc + p.amount, 0);
   const formatMoney = (amount: number, code: string) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: code }).format(amount);
+  const settledByCurrency = payments
+    .filter((p: Payment) => p.status === 'PAID')
+    .reduce((totals: Record<string, number>, p: Payment) => {
+      totals[p.currency] = (totals[p.currency] ?? 0) + p.amount;
+      return totals;
+    }, {});
+  const settledSummary = Object.entries(settledByCurrency)
+    .map(([code, amount]) => formatMoney(amount, code))
+    .join(' · ');
 
   const pendingCount = payments.filter((p: Payment) => p.status === 'PENDING').length;
   const paidCount = payments.filter((p: Payment) => p.status === 'PAID').length;
@@ -126,8 +139,8 @@ export function PaymentsView() {
 
         {/* Top Operational Metrics */}
         <div className="panel grid grid-cols-2 divide-x divide-base-600 sm:grid-cols-4">
-          <Metric label={`Demo Settled (${currency ?? '—'})`} value={currency ? formatMoney(totalSettled, currency) : '—'} tone="healthy" hint="Simulated demo records only" />
-          <Metric label="Settled Demo Records" value={paidCount} tone="accent" hint="Provider-confirmed receipts" />
+          <Metric label="Paid Demo Value" value={settledSummary || '—'} tone="healthy" hint="Simulated totals, grouped by currency" />
+          <Metric label="Settled Demo Records" value={paidCount} tone="accent" hint="Simulated settlements only" />
           <Metric label="Pending Demo Payments" value={pendingCount} tone="warn" hint="Active reservations" />
           <Metric label="Payment Mode" value="DEMO" tone="neutral" hint="No real money movement" />
         </div>
@@ -162,7 +175,11 @@ export function PaymentsView() {
                       </option>
                     ))}
                   </select>
-                  {payableShipments.length === 0 && <p className="mt-2 text-2xs text-warn">No driver-confirmed shipment is ready for payment yet. Payment becomes available after the assigned driver accepts a shipment.</p>}
+                  {payableShipments.length === 0 && (
+                    <p className="mt-2 text-2xs text-warn">
+                      No unpaid, driver-confirmed shipments are available. A shipment becomes eligible after the assigned driver accepts it; shipments with a pending or completed payment cannot be charged again.
+                    </p>
+                  )}
                 </div>
 
                 {/* Shipment Summary Card */}
@@ -339,7 +356,7 @@ export function PaymentsView() {
         </div>
       )}
 
-      {/* Checkout status and official receipt */}
+      {/* Checkout status and printable demo payment record */}
       {activeReceipt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-950/80 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-xl border border-healthy/40 bg-base-900 p-6 shadow-2xl">
@@ -396,7 +413,7 @@ export function PaymentsView() {
               </div>
 
               <div className={cn('rounded border p-3 text-2xs', activeReceipt.status === 'PAID' ? 'border-healthy/30 bg-healthy/5 text-healthy' : 'border-warn/30 bg-warn/5 text-warn')}>
-                {activeReceipt.status === 'PAID' ? 'Demo settlement recorded by FleetGrid. No real money moved; this is not a bank or provider receipt.' : 'This demo payment is pending. Use the simulation action below to demonstrate settlement. No real money will move.'}
+                {activeReceipt.status === 'PAID' ? 'DEMO SETTLED — FleetGrid recorded a simulated success. No real money moved; this is not a bank or payment-provider receipt.' : 'DEMO PENDING — use the simulation action below to record a successful demonstration result. No real money will move.'}
               </div>
 
               {activeReceipt.status === 'PENDING' && activeReceipt.provider === 'FleetGrid Demo Simulator' && (
@@ -419,7 +436,7 @@ export function PaymentsView() {
                   onClick={() => window.print()}
                   className="rounded border border-base-600 bg-base-800 px-4 py-2 font-mono text-2xs uppercase tracking-wider text-ink-200 hover:bg-base-700"
                 >
-                  Print Demo Record
+                  Print Demo Payment Record
                 </button>
                 <button
                   type="button"
