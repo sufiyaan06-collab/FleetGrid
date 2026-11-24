@@ -103,6 +103,27 @@ async function main(): Promise<void> {
     console.log(`[fleetgrid] seeded demo data → ${config.dataDir} (${seed.trucks} trucks, ${seed.shipments} shipments)`);
   }
 
+  // Explicitly configured primary administrator promotion. The email must already
+  // belong to a verified credential account; never create credentials or guess an identity.
+  const primaryAdminEmail = process.env.FLEETGRID_PRIMARY_ADMIN_EMAIL?.trim().toLowerCase();
+  if (primaryAdminEmail) {
+    const accounts = await db.authAccounts.find((account) => account.email.toLowerCase() === primaryAdminEmail && Boolean(account.emailVerifiedAt));
+    if (accounts.length !== 1) {
+      throw new Error('[fleetgrid] primary admin promotion requires exactly one existing verified auth account.');
+    }
+    const adminUser = await db.users.findById(accounts[0].id);
+    if (!adminUser) throw new Error('[fleetgrid] primary admin auth account has no matching FleetGrid user.');
+    const adminOrg = await db.organizations.findById(adminUser.organizationId);
+    if (!adminOrg || adminOrg.status !== 'ACTIVE') {
+      throw new Error('[fleetgrid] primary admin organization must be active before promotion.');
+    }
+    if (adminUser.role !== 'CONTROL_TOWER') {
+      const promoted = await db.users.update(adminUser.id, { role: 'CONTROL_TOWER' });
+      if (!promoted) throw new Error('[fleetgrid] primary admin promotion failed.');
+      console.log('[fleetgrid] configured primary administrator role for verified account.');
+    }
+  }
+
   server.listen(config.port, config.host, () => {
     console.log(`[fleetgrid] API      http://localhost:${config.port}`);
     console.log(`[fleetgrid] realtime ws://localhost:${config.port}/realtime`);
