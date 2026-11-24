@@ -69,6 +69,11 @@ assert.equal(event?.actorType,'BUSINESS');
 assert.equal(event?.proofStatus,'FALLBACK_RECORDED');
 assert.equal(event?.timestamp,null);
 
+const unknownProof = valid();
+unknownProof.shipment_events[0]!.proof_status = null;
+const unknownProofEvent = mapLegacySnapshot(unknownProof).records.find(r=>r.sourceTable==='shipment_events')?.data;
+assert.equal(unknownProofEvent?.proofStatus,null,'missing legacy proof state remains unknown');
+
 const incident=report.records.find(r=>r.sourceTable==='incidents')?.data;
 assert.equal(incident?.type,'TRUCK_BREAKDOWN');
 assert.equal(incident?.severity,null);
