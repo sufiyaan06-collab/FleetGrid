@@ -80,15 +80,16 @@ test('Payments Hub clearly identifies the no-money demo simulator', async ({ pag
 });
 
 
-test('operational dashboards hydrate from backend snapshots and preserve role navigation', async ({ page }) => {
+test('operational dashboards keep users inside their active workspace', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Enter Control Tower', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Network Control' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Landing', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /Logistics that/i })).toBeVisible();
-
-  await page.getByRole('button', { name: /Driver Cab/ }).click();
-  await expect(page.getByRole('heading', { name: 'Ravi Kumar' })).toBeVisible();
-  await expect(page.getByText('FG-027', { exact: false }).first()).toBeVisible();
+  // A signed-in/active workspace must not expose the public landing page or
+  // another role's portal. The brand mark is a home shortcut, not a public link.
+  await expect(page.getByRole('button', { name: 'Landing', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Driver workspace|Driver Cab/ })).toHaveCount(0);
+  await page.getByRole('button', { name: /FLEETGRID LOGISTICS INTELLIGENCE/ }).click();
+  await expect(page.getByRole('heading', { name: 'Network Control' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Logistics that/i })).toHaveCount(0);
 });
