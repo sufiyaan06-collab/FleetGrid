@@ -36,9 +36,6 @@ async function tableExists(client: PoolClient, name: string): Promise<boolean> {
  * - Quarantined rows remain untouched in their source tables and are counted only.
  */
 async function main(): Promise<void> {
-  if (process.env.FLEETGRID_LEGACY_IMPORT_APPROVED !== 'true') {
-    throw new Error('Blocked. Set FLEETGRID_LEGACY_IMPORT_APPROVED=true only after reviewing the dry-run report and approving this production import.');
-  }
   if (process.env.NODE_ENV !== 'production' && process.env.RENDER !== 'true' && !process.env.RENDER_SERVICE_ID) {
     throw new Error('This apply command is restricted to the configured Render production runtime.');
   }
@@ -53,6 +50,38 @@ async function main(): Promise<void> {
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
     await client.query("SELECT pg_advisory_xact_lock(hashtext('fleetgrid:legacy-import:v1'))");
+
+    // Safe on every service restart: after a successful import, verify the ledger
+    // and target count, then exit without touching source or target records.
+    if (await tableExists(client, LEDGER)) {
+      const prior = await client.query<{ imported_rows: number }>(
+        `SELECT imported_rows FROM public.${LEDGER} WHERE id = $1`,
+        ['legacy-python-postgres-v1'],
+      );
+      if (prior.rows.length === 1) {
+        const targetCount = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM public.${TARGET}`,
+        );
+        if (Number(targetCount.rows[0]?.count ?? 0) !== Number(prior.rows[0]?.imported_rows ?? -1)) {
+          throw new Error('Existing import ledger does not match fleetgrid_records. Refusing to start.');
+        }
+        await client.query('COMMIT');
+        process.stdout.write(JSON.stringify({
+          mode: 'ALREADY_IMPORTED_VERIFIED',
+          importedRows: Number(prior.rows[0]?.imported_rows ?? 0),
+          noChangesMade: true,
+        }, null, 2) + '\\n');
+        return;
+      }
+      const ledgerCount = await client.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM public.${LEDGER}`);
+      if (Number(ledgerCount.rows[0]?.count ?? 0) > 0) {
+        throw new Error('An unrecognized import ledger entry exists. Refusing to run.');
+      }
+    }
+
+    if (process.env.FLEETGRID_LEGACY_IMPORT_APPROVED !== 'true') {
+      throw new Error('Blocked. Set FLEETGRID_LEGACY_IMPORT_APPROVED=true only after reviewing the dry-run report and approving this production import.');
+    }
 
     const sourceTables = await client.query<{ table_name: string }>(
       `SELECT table_name FROM information_schema.tables
