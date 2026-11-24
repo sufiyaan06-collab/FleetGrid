@@ -197,6 +197,23 @@ export function FleetProvider({ children }: { children: ReactNode }) {
 
   const setMode = useCallback(
     async (next: Mode) => {
+      // An authenticated account stays inside its own portal. Public marketing,
+      // sign-in and registration screens are available only after signing out.
+      if (session?.mode === 'authenticated') {
+        const role = session.user.role;
+        const home: Mode = role === 'BUSINESS' ? 'BUSINESS' : role === 'DRIVER' ? 'DRIVER' : 'CONTROL_TOWER';
+        const allowed: Mode[] = role === 'BUSINESS'
+          ? ['BUSINESS', 'PAYMENTS', 'LIVE_MAP']
+          : role === 'DRIVER'
+            ? ['DRIVER', 'LIVE_MAP']
+            : ['CONTROL_TOWER', 'PAYMENTS', 'LIVE_MAP'];
+        if (!allowed.includes(next)) {
+          setModeState(home);
+          try { window.localStorage.setItem(MODE_STORAGE_KEY, home); } catch { /* private mode */ }
+          return;
+        }
+      }
+
       // Production operational workspaces always require a real account session.
       // Keep demo role entry available only in local development.
       if (
