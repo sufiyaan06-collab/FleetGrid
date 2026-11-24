@@ -52,6 +52,7 @@ interface FleetContextValue {
   connection: ConnectionStatus;
   mode: Mode | null;
   session: DemoLoginResponse | null;
+  authReady: boolean;
   lastEvent: { type: string; at: number } | null;
   /** Highlights rows touched by the most recent realtime event. */
   flashIds: string[];
@@ -82,6 +83,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setModeState] = useState<Mode | null>(() => readStoredMode());
   const [session, setSession] = useState<DemoLoginResponse | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [lastEvent, setLastEvent] = useState<{ type: string; at: number } | null>(null);
   const [flashIds, setFlashIds] = useState<string[]>([]);
   const [flashTone, setFlashTone] = useState<FlashKind>('ok');
@@ -164,6 +166,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         availableRoles: [account.user.role],
       };
       setSession(restored);
+      setAuthReady(true);
       const shouldOpenPayments = initialModeRef.current === 'PAYMENTS' || initialPaymentReturnRef.current;
       const restoredMode = shouldOpenPayments && account.user.role === 'BUSINESS' ? 'PAYMENTS' : nextMode;
       setModeState(restoredMode);
@@ -178,6 +181,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
       if (!active) return;
       setModeState(shouldPreserveLogin ? 'LOGIN' : 'LANDING');
       setSession(null);
+      setAuthReady(true);
       try {
         window.localStorage.removeItem(MODE_STORAGE_KEY);
       } catch {
@@ -318,6 +322,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     connection,
     mode,
     session,
+    authReady,
     lastEvent,
     flashIds,
     flashTone,
