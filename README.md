@@ -92,7 +92,7 @@ Production is configured to stay on the existing Render PostgreSQL database:
 - Keep `AUTO_SEED=false`; deterministic demo records must not be inserted into production.
 - The legacy relational tables remain the source of truth until the additive import is explicitly approved and reconciled.
 - `import:legacy:dry-run` reads the legacy tables in a read-only transaction and prints only aggregate counts, schema metadata, and redacted issue codes.
-- `import:legacy:apply` is a separate one-time, approval-gated operation. It writes mapped records only to `fleetgrid_records` and a metadata-only ledger in the same Render database. It refuses a non-empty target or a repeated import and never updates or deletes legacy rows.
+- `import:legacy:apply` is a separate one-time, approval-gated operation. It writes mapped records only to `fleetgrid_records` and a metadata-only ledger in the same Render database. It refuses a non-empty target on first run, verifies the ledger and becomes a no-op on later restarts, and never updates or deletes legacy rows.
 - The current Render Free PostgreSQL database expires on **2026-12-15**. It can support the near-term project demonstration, but it is not durable long-term production storage. No paid resource has been created.
 
 The JSON-to-PostgreSQL script migrates Node JSON collections only; it is not the legacy relational importer. The production legacy import has not been run. See:
