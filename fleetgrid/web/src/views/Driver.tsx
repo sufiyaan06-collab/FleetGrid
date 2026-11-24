@@ -55,7 +55,7 @@ export function Driver() {
     () =>
       snapshot.shipments
         .filter((s) => Boolean(truckId) && s.truckId === truckId && s.status !== 'DELIVERED')
-        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+        .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '')),
     [snapshot.shipments, truckId],
   );
   const cargo = assigned[0] ?? null;
