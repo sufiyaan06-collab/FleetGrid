@@ -118,13 +118,13 @@ export async function initializePostgres(pool: Pool): Promise<void> {
   // Enforce unique, case-insensitive email addresses for credential accounts.
   await pool.query(
     `CREATE UNIQUE INDEX IF NOT EXISTS fleetgrid_auth_email_unique_idx
-     ON ${TABLE} (LOWER(data->>'email'))
+     ON ${TABLE} ((LOWER(data->>'email')))
      WHERE collection = 'auth-accounts'`,
   );
   // One active or paid checkout per shipment, enforced across API instances.
   await pool.query(
     `CREATE UNIQUE INDEX IF NOT EXISTS fleetgrid_active_payment_shipment_unique_idx
-     ON ${TABLE} (data->>'shipmentId')
+     ON ${TABLE} ((data->>'shipmentId'))
      WHERE collection = 'payments' AND data->>'status' IN ('CREATED', 'PENDING', 'PAID')`,
   );
 }
