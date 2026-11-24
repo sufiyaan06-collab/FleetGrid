@@ -147,7 +147,7 @@ function makeRecord(table: TableName, row: LegacyRow, all: LegacyTables): Migrat
       const capacityT=num(row.capacity_t), availableT=num(row.available_t);
       if(capacityT===null) issue(issues,'INVALID_CAPACITY','error','capacity_t');
       if(availableT===null) issue(issues,'INVALID_AVAILABLE_CAPACITY','error','available_t');
-      return mapped(COLLECTION[table],{id,organizationId:str(row.organization_id),registrationNo:required(row.registration_no,'registration_no'),capacityT,availableT,status,lat:num(row.lat),lng:num(row.lng),origin:str(row.origin),destination:str(row.destination),departureAt:timestamp(row.departure_at,issues,'departure_at'),driverId,createdAt:null});
+      return mapped(COLLECTION[table],{id,organizationId:str(row.organization_id),registrationNo:required(row.registration_no,'registration_no'),capacityT,availableT,status,lat:num(row.lat),lng:num(row.lng),speedKmph:num(row.speed_kmph),heading:num(row.heading),locationStatus:str(row.location_status),lastLocationUpdate:timestamp(row.last_location_update,issues,'last_location_update'),origin:str(row.origin),destination:str(row.destination),departureAt:timestamp(row.departure_at,issues,'departure_at'),driverId,createdAt:null});
     }
     case 'capacity_offers': {
       relationship(row.truck_id,trucks,'truckId',true);
