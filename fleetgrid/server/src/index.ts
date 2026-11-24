@@ -108,10 +108,11 @@ async function main(): Promise<void> {
   const primaryAdminEmail = process.env.FLEETGRID_PRIMARY_ADMIN_EMAIL?.trim().toLowerCase();
   if (primaryAdminEmail) {
     const accounts = await db.authAccounts.find((account) => account.email.toLowerCase() === primaryAdminEmail && Boolean(account.emailVerifiedAt));
-    if (accounts.length !== 1) {
+    if (accounts.length !== 1 || !accounts[0]) {
       throw new Error('[fleetgrid] primary admin promotion requires exactly one existing verified auth account.');
     }
-    const adminUser = await db.users.findById(accounts[0].id);
+    const verifiedAccount = accounts[0];
+    const adminUser = await db.users.findById(verifiedAccount.id);
     if (!adminUser) throw new Error('[fleetgrid] primary admin auth account has no matching FleetGrid user.');
     const adminOrg = await db.organizations.findById(adminUser.organizationId);
     if (!adminOrg || adminOrg.status !== 'ACTIVE') {
