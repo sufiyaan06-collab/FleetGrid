@@ -2,13 +2,16 @@
 # https://render.com/docs/blueprint-spec
 #
 # HOW TO DEPLOY ON RENDER:
-#   1. Go to https://dashboard.render.com
-#   2. Review the Blueprint changes and database plan before applying.
-#   3. Confirm the selected repository and branch are the intended release branch.
-#   4. Services have autoDeploy disabled below; deploy manually only after migration and smoke tests.
-#      - fleetgrid-app: The Full-Stack Node Web App (UI + Google Maps + API + WebSockets)
-#      - fleetgrid-backend: Python FastAPI backend (optional)
-#      - fleetgrid-db: PostgreSQL database (optional)
+#   1. Review the Blueprint plan before applying it to the existing production services.
+#   2. This Blueprint adopts the existing fleetgrid-app, fleetgrid-backend, and fleetgrid-db resources.
+#   3. No staging resources or paid resources are created.
+#   4. Keep auto-deploy disabled; deploy manually only after the database migration and smoke tests.
+#
+# Production database strategy:
+#   - Keep the existing Render PostgreSQL database fleetgrid-db.
+#   - Preserve its normalized legacy tables.
+#   - The Node app uses an additive fleetgrid_records JSONB table in the same database.
+#   - Do not enable FLEETGRID_POSTGRES_SCHEMA_READY until the additive schema and data import are reviewed.
 
 services:
   # ── 1. FleetGrid Full-Stack Production App (React + Express + WebSockets) ──
@@ -35,13 +38,21 @@ services:
         value: https://fleetgrid-app.onrender.com
       - key: CORS_ORIGIN
         value: "https://ember-beryl-phi.vercel.app,https://fleetgrid-app.onrender.com"
-      # Do not attach fleetgrid-db here: it is the legacy relational database
-      # still used by the Python service. Configure a separate Node PostgreSQL
-      # target manually only after backup/restore and migration gates are approved.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fleetgrid-db
+          property: connectionString
+      # Read-only legacy importer source; references the same existing Render database.
+      - key: LEGACY_DATABASE_URL
+        fromDatabase:
+          name: fleetgrid-db
+          property: connectionString
+      # FLEETGRID_POSTGRES_SCHEMA_READY is intentionally not enabled here.
+      # Enable it only after the additive Node schema and legacy data import are verified.
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 
-  # ── 2. FleetGrid Python Backend (FastAPI + GPS Simulations) ──────────────
+  # ── 2. FleetGrid Python Backend (legacy relational API; disabled in production) ──
   - type: web
     name: fleetgrid-backend
     runtime: python
@@ -49,7 +60,7 @@ services:
     autoDeploy: false
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    # Do not run Alembic DDL automatically on production startup; migrate only after backup and approval.
+    # Do not run Alembic DDL automatically on production startup.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
 
