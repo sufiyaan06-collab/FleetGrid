@@ -58,7 +58,7 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
     throw ApiError.conflict('Recovery planning requires a recorded origin and destination for the affected truck.');
   }
 
-  const shipments = await db.shipments.find((s) => incident.affectedShipmentIds.includes(s.id));
+  const shipments = await db.shipments.find((s) => (incident.affectedShipmentIds ?? []).includes(s.id));
   const totalWeightT = round(shipments.reduce((sum, s) => sum + s.weightT, 0));
 
   return {
@@ -70,7 +70,7 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
     totalWeightT,
     affectedShipments: shipments.map((s) => ({
       id: s.id,
-      cargoName: s.cargoName,
+      cargoName: s.cargoName ?? 'Cargo description not recorded',
       weightT: s.weightT,
       status: s.status,
       origin: s.origin,
@@ -79,7 +79,7 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
       deadlineAt: s.deadlineAt,
     })),
     notes: [
-      `Truck ${truck.id} is blocked at ${incident.location} (${incident.severity.toLowerCase()} severity).`,
+      `Truck ${truck.id} is blocked at ${incident.location} (${(incident.severity ?? 'unknown').toLowerCase()} severity).`,
       `${shipments.length} shipment(s) carrying ${totalWeightT}T are now AT_RISK.`,
       'Distances and ETAs below are demo estimates unless a routing provider is integrated.',
     ],
@@ -220,7 +220,7 @@ export async function createRecoveryPlan(incidentId: string): Promise<CreatePlan
     const existing = await db.recoveryPlans.find((p) => p.incidentId === incidentId);
     if (existing.length > 0) {
       const plan = existing[0] as RecoveryPlan;
-      return { plan, incident, options: plan.options, created: false };
+      return { plan, incident, options: plan.options ?? [], created: false };
     }
 
     if (incident.status === 'OPEN') {
@@ -366,6 +366,9 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
       throw ApiError.conflict(`Recovery plan ${planId} has no selected replacement truck, so it cannot execute.`);
     }
 
+    if (!plan.affectedShipmentIds?.length) {
+      throw ApiError.conflict('This legacy recovery plan has no verified affected-shipment list and cannot be executed.');
+    }
     await db.recoveryPlans.update(planId, { status: 'EXECUTING', updatedAt: nowIso() });
 
     const incident = await getIncident(plan.incidentId);
@@ -376,7 +379,7 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
 
     const reassignments: ExecuteResult['reassignments'] = [];
 
-    for (const shipmentId of plan.affectedShipmentIds) {
+    for (const shipmentId of (plan.affectedShipmentIds ?? [])) {
       const shipment = await db.shipments.findById(shipmentId);
       if (!shipment) continue;
       if (shipment.truckId === targetTruck.id) {
@@ -487,7 +490,7 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
         id: newId('ntf'),
         recipientId: targetDriver.id,
         type: 'RECOVERY_INSTRUCTION',
-        message: `Collect ${plan.affectedShipmentIds.join(', ')} from ${originalTruck.id} at ${incident.location} and continue to ${targetTruck.destination}.`,
+        message: `Collect ${(plan.affectedShipmentIds ?? []).join(', ')} from ${originalTruck.id} at ${incident.location} and continue to ${targetTruck.destination ?? 'the recorded destination'}.`,
         status: 'PENDING',
         createdAt: nowIso(),
       });
@@ -550,11 +553,12 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
 
 async function readPlanState(plan: RecoveryPlan): Promise<Omit<ExecuteResult, 'alreadyExecuted'>> {
   const incident = await db.incidents.findById(plan.incidentId);
-  const shipment = plan.affectedShipmentIds[0] ? await getShipment(plan.affectedShipmentIds[0]) : null;
+  const affectedShipmentIds = plan.affectedShipmentIds ?? [];
+  const shipment = affectedShipmentIds[0] ? await getShipment(affectedShipmentIds[0]) : null;
   const fromTruck = incident ? await db.trucks.findById(incident.truckId) : undefined;
   const toTruck = plan.selectedTruckId ? await db.trucks.findById(plan.selectedTruckId) : undefined;
 
-  const reassignments: ExecuteResult['reassignments'] = plan.affectedShipmentIds.map((id) => ({
+  const reassignments: ExecuteResult['reassignments'] = affectedShipmentIds.map((id) => ({
     shipmentId: id,
     fromTruckId: fromTruck?.id ?? null,
     toTruckId: plan.selectedTruckId ?? '',
