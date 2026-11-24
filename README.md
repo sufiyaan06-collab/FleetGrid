@@ -85,16 +85,17 @@ See [account and storage setup](fleetgrid/server/ACCOUNT_SETUP.md).
 
 ## Production storage and migration safety
 
-Production must use a persistent PostgreSQL target:
+Production is configured to stay on the existing Render PostgreSQL database:
 
 - `DATABASE_URL` is required in production.
-- `FLEETGRID_POSTGRES_SCHEMA_READY=true` is required before the Node app creates its JSONB table and indexes.
+- `FLEETGRID_POSTGRES_SCHEMA_READY=true` is required before the Node app initializes its JSONB table and indexes.
 - Keep `AUTO_SEED=false`; deterministic demo records must not be inserted into production.
-- Do not enable the schema gate until the target database, backup/restore plan, and migration are reviewed.
-- The existing Render PostgreSQL database contains legacy relational tables. The legacy importer is currently read-only; it does not write to a target.
-- The Render free PostgreSQL plan is time-limited. A persistent target must be selected before the current database expires.
+- The legacy relational tables remain the source of truth until the additive import is explicitly approved and reconciled.
+- `import:legacy:dry-run` reads the legacy tables in a read-only transaction and prints only aggregate counts, schema metadata, and redacted issue codes.
+- `import:legacy:apply` is a separate one-time, approval-gated operation. It writes mapped records only to `fleetgrid_records` and a metadata-only ledger in the same Render database. It refuses a non-empty target or a repeated import and never updates or deletes legacy rows.
+- The current Render Free PostgreSQL database expires on **2026-12-15**. It can support the near-term project demonstration, but it is not durable long-term production storage. No paid resource has been created.
 
-The JSON-to-PostgreSQL script migrates Node JSON collections only; it is not the legacy relational importer. Production writes are blocked by the migration script. See:
+The JSON-to-PostgreSQL script migrates Node JSON collections only; it is not the legacy relational importer. The production legacy import has not been run. See:
 
 - [Database compatibility decisions](fleetgrid/DATABASE_COMPATIBILITY_DECISIONS_2026-11-23.md)
 - [Legacy database migration plan](fleetgrid/LEGACY_DATABASE_MIGRATION_PLAN.md)
