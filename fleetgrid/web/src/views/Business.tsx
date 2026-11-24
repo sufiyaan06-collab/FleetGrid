@@ -774,17 +774,27 @@ export function Business() {
             <div className="space-y-4">
               <Panel eyebrow="Network capacity" title="Spare tonnage right now" bodyClassName="p-3.5">
                 <ul className="space-y-2">
-                  {snapshot.trucks.map((t) => (
-                    <li key={t.id} className="flex items-center justify-between gap-2 rounded border border-base-600 bg-base-900/50 px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-ink-50">{t.id}</span>
-                        <StatusPill status={t.status} tone={truckTone(t.status)} />
-                      </div>
-                      <span className="tabular font-mono text-[11px] text-ink-300">
-                        {formatT(t.availableT)} / {formatT(t.capacityT)}
-                      </span>
-                    </li>
-                  ))}
+                  {snapshot.trucks.map((t) => {
+                    const fleet = snapshot.organizations.find((org) => org.id === t.organizationId);
+                    const assignedDriver = snapshot.drivers.find((driver) => driver.id === t.driverId);
+                    return (
+                      <li key={t.id} className="rounded border border-base-600 bg-base-900/50 px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs text-ink-50">{t.id}</span>
+                            <StatusPill status={t.status} tone={truckTone(t.status)} />
+                          </div>
+                          <span className="tabular font-mono text-[11px] text-ink-300">
+                            {formatT(t.availableT)} / {formatT(t.capacityT)}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-ink-400">
+                          <span>Fleet: <span className="text-ink-200">{fleet?.name ?? 'Unknown fleet'}</span></span>
+                          <span>Driver: <span className={assignedDriver ? 'text-ink-200' : 'text-warn'}>{assignedDriver?.name ?? 'Not assigned'}</span></span>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
                 <p className="mt-2.5 text-[10px] leading-relaxed text-ink-500">
                   Live from the server. A reservation on any device reduces these numbers for every other device
