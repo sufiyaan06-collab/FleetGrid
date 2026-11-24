@@ -33,7 +33,8 @@ export default function LandingPage() {
             {links.map((link) => <a key={link.href} href={link.href} className="text-[13px] font-medium text-slate-400 transition hover:text-white">{link.label}</a>)}
           </div>
           <div className="hidden items-center gap-3 md:flex">
-            <button onClick={() => go('LOGIN')} className="rounded-lg px-4 py-2.5 text-[13px] font-semibold text-slate-300 transition hover:text-white">Sign in</button>
+            <button onClick={() => go('LOGIN')} className="rounded-lg px-4 py-2.5 text-[13px] font-semibold text-slate-300 transition hover:text-white">Shipper / Driver sign in</button>
+            <button onClick={() => go('LOGIN')} className="rounded-lg border border-white/15 px-4 py-2.5 text-[13px] font-semibold text-emerald-200 transition hover:border-emerald-300/40 hover:bg-emerald-300/[0.06]">Admin / Operations</button>
             <button onClick={() => go('REGISTER')} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-400 px-4 text-[13px] font-bold text-[#062018] shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-300">Get started <Arrow /></button>
           </div>
           <button type="button" onClick={() => setMenuOpen((v) => !v)} aria-label={menuOpen ? "Close menu" : "Open menu"} aria-expanded={menuOpen} className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 text-slate-200 md:hidden">
@@ -43,7 +44,8 @@ export default function LandingPage() {
         {menuOpen && <div className="border-t border-white/[0.08] bg-[#0b1525] px-5 py-5 md:hidden">
           <div className="flex flex-col gap-4">{links.map((link) => <a key={link.href} href={link.href} onClick={() => setMenuOpen(false)} className="text-sm text-slate-300">{link.label}</a>)}</div>
           <div className="mt-5 flex gap-3">
-            <button onClick={() => go('LOGIN')} className="h-11 flex-1 rounded-lg border border-white/15 text-sm font-semibold">Sign in</button>
+            <button onClick={() => go('LOGIN')} className="h-11 flex-1 rounded-lg border border-white/15 text-sm font-semibold">Shipper / Driver sign in</button>
+            <button onClick={() => go('LOGIN')} className="h-11 flex-1 rounded-lg border border-emerald-300/30 text-sm font-semibold text-emerald-200">Admin / Operations</button>
             <button onClick={() => go('REGISTER')} className="h-11 flex-[1.4] rounded-lg bg-emerald-400 text-sm font-bold text-[#062018]">Create account</button>
           </div>
         </div>}
@@ -65,7 +67,8 @@ export default function LandingPage() {
               </p>
               <div className="mt-9 flex flex-wrap items-center gap-3">
                 <button onClick={() => go('REGISTER')} className="inline-flex h-12 items-center gap-2 rounded-lg bg-emerald-400 px-5 text-[13px] font-bold text-[#062018] shadow-xl shadow-emerald-950/30 transition hover:-translate-y-0.5 hover:bg-emerald-300">Create your account <Arrow /></button>
-                <button onClick={() => go('LOGIN')} className="inline-flex h-12 items-center rounded-lg border border-white/15 px-5 text-[13px] font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/[0.04]">Sign in</button>
+                <button onClick={() => go('LOGIN')} className="inline-flex h-12 items-center rounded-lg border border-white/15 px-5 text-[13px] font-semibold text-slate-200 transition hover:border-white/30 hover:bg-white/[0.04]">Shipper / Driver sign in</button>
+                <button onClick={() => go('LOGIN')} className="inline-flex h-12 items-center rounded-lg border border-emerald-300/25 px-5 text-[13px] font-semibold text-emerald-200 transition hover:border-emerald-300/45 hover:bg-emerald-300/[0.05]">Admin / Operations sign in</button>
               </div>
               <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-[12px] text-slate-500">
                 <span className="flex items-center gap-2"><Check /> One connected workspace</span>
