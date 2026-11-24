@@ -20,7 +20,7 @@ export async function createDemoPayment(shipmentId: string, actor: User): Promis
     if (shipment.status !== 'CONFIRMED') {
       throw ApiError.conflict('The assigned driver must accept the shipment before a demo payment can be created.');
     }
-    if (!Number.isFinite(shipment.price) || shipment.price <= 0 || !/^[A-Z]{3}$/.test(shipment.currency)) {
+    if (shipment.price === null || !Number.isFinite(shipment.price) || shipment.price <= 0 || !shipment.currency || !/^[A-Z]{3}$/.test(shipment.currency)) {
       throw ApiError.badRequest('The shipment must have a valid agreed amount and currency.');
     }
     const existing = await db.payments.find((payment) =>
