@@ -64,7 +64,7 @@ export function Driver() {
     () =>
       snapshot.incidents
         .filter((i) => i.truckId === truckId)
-        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+        .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '')),
     [snapshot.incidents, truckId],
   );
 
