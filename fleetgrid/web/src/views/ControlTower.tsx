@@ -51,7 +51,7 @@ export function ControlTower() {
   }, [trucks, filter]);
 
   const recentEvents = useMemo(
-    () => events.slice().sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)),
+    () => events.slice().sort((a, b) => Date.parse(b.timestamp ?? '') - Date.parse(a.timestamp ?? '')),
     [events],
   );
 
