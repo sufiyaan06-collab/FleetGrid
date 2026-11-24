@@ -11,7 +11,8 @@ import { Login } from './views/Login';
 import { RoleSelect } from './views/RoleSelect';
 
 function Router() {
-  const { mode, session, setMode } = useFleet();
+  const { mode, session, authReady, setMode } = useFleet();
+  if (!authReady) return <div className="min-h-screen bg-base" role="status" aria-label="Restoring your FleetGrid session" />;
   const homeMode = session?.user.role === 'BUSINESS'
     ? 'BUSINESS'
     : session?.user.role === 'DRIVER'
