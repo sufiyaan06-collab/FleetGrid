@@ -21,7 +21,7 @@ services:
     plan: free
     rootDir: .
     buildCommand: npm --prefix fleetgrid/web install && npm --prefix fleetgrid/web run build && npm --prefix fleetgrid/server install && npm --prefix fleetgrid/server run build
-    startCommand: cd fleetgrid/server && npm run serve
+    startCommand: cd fleetgrid/server && npm run import:legacy:apply && FLEETGRID_POSTGRES_SCHEMA_READY=true npm run serve
     healthCheckPath: /api
     autoDeploy: false
 
@@ -47,8 +47,10 @@ services:
         fromDatabase:
           name: fleetgrid-db
           property: connectionString
-      # FLEETGRID_POSTGRES_SCHEMA_READY is intentionally not enabled here.
-      # Enable it only after the additive Node schema and legacy data import are verified.
+      # The startup command runs the guarded importer first. It fails closed until
+      # FLEETGRID_LEGACY_IMPORT_APPROVED=true is explicitly set in Render.
+      - key: FLEETGRID_LEGACY_IMPORT_APPROVED
+        value: "false"
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 
