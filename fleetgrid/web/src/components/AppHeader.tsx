@@ -13,7 +13,7 @@ const CONNECTION_COPY: Record<ConnectionStatus, { label: string; dot: string }> 
 };
 
 const MODES: Array<{ id: Mode; label: string; short: string; icon: string }> = [
-  { id: 'LANDING', label: 'Overview', short: 'Overview', icon: '⌂' },
+  { id: 'LANDING', label: 'Landing', short: 'Landing', icon: '⌂' },
   { id: 'CONTROL_TOWER', label: 'Control tower', short: 'Control tower', icon: '▦' },
   { id: 'LIVE_MAP', label: 'Live tracking', short: 'Live tracking', icon: '⌖' },
   { id: 'BUSINESS', label: 'Shipments', short: 'Shipments', icon: '⇄' },
