@@ -157,7 +157,7 @@ export interface ShipmentEvent {
   timestamp: string | null;
   hash: string;
   blockchainTx: string | null;
-  proofStatus: ProofStatus;
+  proofStatus: ProofStatus | null;
 }
 
 export interface RecoveryOption {
