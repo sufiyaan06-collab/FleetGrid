@@ -496,7 +496,7 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
       });
       notificationIds.push(row.id);
     }
-    for (const shipmentId of plan.affectedShipmentIds) {
+    for (const shipmentId of (plan.affectedShipmentIds ?? [])) {
       const shipment = await db.shipments.findById(shipmentId);
       if (!shipment) continue;
       const row = await db.notifications.create({
