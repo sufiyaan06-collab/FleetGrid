@@ -37,9 +37,13 @@ export function PaymentsView() {
 
   // Use only the price and currency stored on the selected shipment.
   // Do not invent tolls, platform fees, taxes, or a fallback freight price.
-  const totalAmount = selectedShipment?.price ?? 0;
-  const currency = selectedShipment?.currency ?? 'INR';
-  const hasValidAmount = Number.isFinite(totalAmount) && totalAmount > 0;
+  const totalAmount = selectedShipment?.price ?? null;
+  const currency = selectedShipment?.currency ?? null;
+  const hasValidAmount =
+    totalAmount !== null &&
+    Number.isFinite(totalAmount) &&
+    totalAmount > 0 &&
+    Boolean(currency && /^[A-Z]{3}$/.test(currency));
 
   // Metrics
   const totalSettled = payments
@@ -122,7 +126,7 @@ export function PaymentsView() {
 
         {/* Top Operational Metrics */}
         <div className="panel grid grid-cols-2 divide-x divide-base-600 sm:grid-cols-4">
-          <Metric label={`Demo Settled (${currency})`} value={formatMoney(totalSettled, currency)} tone="healthy" hint="Simulated demo records only" />
+          <Metric label={`Demo Settled (${currency ?? '—'})`} value={currency ? formatMoney(totalSettled, currency) : '—'} tone="healthy" hint="Simulated demo records only" />
           <Metric label="Settled Demo Records" value={paidCount} tone="accent" hint="Provider-confirmed receipts" />
           <Metric label="Pending Demo Payments" value={pendingCount} tone="warn" hint="Active reservations" />
           <Metric label="Payment Mode" value="DEMO" tone="neutral" hint="No real money movement" />
@@ -218,9 +222,11 @@ export function PaymentsView() {
                   <div className="mt-3 flex items-center justify-between text-sm font-bold text-ink-50">
                     <span>Shipment price</span>
                     <span className="text-healthy">
-                      {hasValidAmount
+                      {hasValidAmount && totalAmount !== null && currency
                         ? formatMoney(totalAmount, currency)
-                        : 'Price not set'}
+                        : totalAmount === null
+                          ? 'Price not recorded'
+                          : 'Price or currency not payable'}
                     </span>
                   </div>
                   <p className="mt-2 text-[10px] leading-relaxed text-ink-500">
@@ -236,7 +242,7 @@ export function PaymentsView() {
                     onClick={handleInitiatePayment}
                     className="flex-1 rounded-lg bg-healthy px-4 py-3 font-mono text-xs font-bold tracking-wider text-base-950 uppercase shadow-md transition-all hover:bg-healthy/90 active:scale-[0.99] disabled:opacity-50"
                   >
-                    {isProcessing ? 'Creating demo payment…' : !providerStatus?.ready ? 'Demo simulator unavailable' : session?.user.role !== 'BUSINESS' ? 'Shipper account required to pay' : hasValidAmount ? `Create demo payment · ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)}` : 'Shipment price required'}
+                    {isProcessing ? 'Creating demo payment…' : !providerStatus?.ready ? 'Demo simulator unavailable' : session?.user.role !== 'BUSINESS' ? 'Shipper account required to pay' : hasValidAmount && totalAmount !== null && currency ? `Create demo payment · ${new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(totalAmount)}` : 'Shipment price and currency required'}
                   </button>
                 </div>
               </div>
