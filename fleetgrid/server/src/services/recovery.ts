@@ -1,4 +1,5 @@
 import { db } from '../store/db.js';
+import { isProductionEnvironment } from '../config.js';
 import { ApiError } from '../lib/errors.js';
 import { newId, nowIso, round } from '../lib/ids.js';
 import { runExclusive } from '../lib/mutex.js';
@@ -131,11 +132,15 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
   const blockedTruck = await db.trucks.findById(impact.truckId);
   if (!blockedTruck) throw ApiError.notFound(`Truck ${impact.truckId} does not exist.`);
 
-  const [trucks, offers, drivers] = await Promise.all([
+  const [trucks, offers, drivers, users, organizations, authAccounts] = await Promise.all([
     db.trucks.get(),
     db.capacityOffers.get(),
     db.drivers.get(),
+    db.users.get(),
+    db.organizations.get(),
+    db.authAccounts.get(),
   ]);
+  const production = isProductionEnvironment();
 
   const incidentPoint = pointForTruck(blockedTruck);
 
@@ -150,6 +155,20 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
 
       const cost = Math.round(impact.totalWeightT * offer.pricePerT * RECOVERY_COST_MULTIPLIER);
       const blockers: string[] = [];
+      const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
+      if (!driver) {
+        blockers.push('no registered driver is assigned to this vehicle');
+      } else {
+        if (driver.assignedTruckId !== truck.id) blockers.push('driver assignment does not match this vehicle');
+        if (!['AVAILABLE', 'ON_JOURNEY'].includes(driver.status)) blockers.push(`driver is ${driver.status.toLowerCase().replace('_', ' ')}`);
+        const driverUser = users.find((u) => u.id === driver.userId && u.role === 'DRIVER' && u.organizationId === truck.organizationId);
+        if (!driverUser || driver.organizationId !== truck.organizationId) blockers.push('driver account or fleet ownership is invalid');
+        const operator = organizations.find((o) => o.id === truck.organizationId && o.type === 'FLEET_OPERATOR' && o.status === 'ACTIVE');
+        if (!operator) blockers.push('fleet operator is not active');
+        if (production && !authAccounts.some((a) => a.id === driver.userId && Boolean(a.emailVerifiedAt))) blockers.push('driver email is not verified');
+      }
+      if (!['AVAILABLE', 'ASSIGNED', 'IN_TRANSIT'].includes(truck.status)) blockers.push(`truck is ${truck.status.toLowerCase().replace('_', ' ')}`);
+      if (offer.status !== 'OPEN') blockers.push(`capacity offer is ${offer.status.toLowerCase()}`);
       if (truck.availableT < impact.totalWeightT) {
         blockers.push(`insufficient spare capacity (${round(truck.availableT)}T < ${impact.totalWeightT}T)`);
       }
@@ -291,9 +310,32 @@ export async function approveRecoveryPlan(planId: string, approvedBy: string): P
       status: 'APPROVED',
       approvedBy,
       approvedAt: nowIso(),
+      driverAcceptedBy: null,
+      driverAcceptedAt: null,
       updatedAt: nowIso(),
     });
     if (!updated) throw ApiError.notFound(`Recovery plan ${planId} disappeared during approval.`);
+    const incident = await getIncident(updated.incidentId);
+    const affectedTruck = await db.trucks.findById(incident.truckId);
+    const replacementTruck = updated.selectedTruckId ? await db.trucks.findById(updated.selectedTruckId) : undefined;
+    const replacementDriver = replacementTruck?.driverId ? await db.drivers.findById(replacementTruck.driverId) : undefined;
+    if (replacementDriver) {
+      const notice = await db.notifications.create({
+        id: newId('ntf'), recipientId: replacementDriver.id, type: 'RECOVERY_ASSISTANCE_REQUEST',
+        message: `Emergency assistance requested: collect shipment ${(updated.affectedShipmentIds ?? []).join(', ')} from ${affectedTruck?.id ?? 'the affected vehicle'} at ${incident.location}. Review and accept this recovery request in FleetGrid.`,
+        status: 'PENDING', createdAt: nowIso(),
+      });
+      hub.broadcast('notification.created', notice);
+    }
+    const strandedDriver = affectedTruck?.driverId ? await db.drivers.findById(affectedTruck.driverId) : undefined;
+    if (strandedDriver) {
+      const notice = await db.notifications.create({
+        id: newId('ntf'), recipientId: strandedDriver.id, type: 'RECOVERY_CANDIDATE_FOUND',
+        message: `A replacement vehicle has been identified for your shipment. Waiting for its driver to accept the handover.`,
+        status: 'PENDING', createdAt: nowIso(),
+      });
+      hub.broadcast('notification.created', notice);
+    }
     await recordEvent({
       eventType: 'recovery.approved',
       incidentId: updated.incidentId,
@@ -323,6 +365,45 @@ export async function rejectRecoveryPlan(planId: string, rejectedBy: string, rea
       actorType: 'OPERATOR',
       actorId: rejectedBy,
     });
+    hub.broadcast('recovery.updated', updated);
+    return updated;
+  });
+}
+
+/** Replacement driver acceptance is tied to the authenticated driver's own assigned truck. */
+export async function acceptRecoveryPlan(planId: string, userId: string): Promise<RecoveryPlan> {
+  return runExclusive(async () => {
+    const plan = await getRecoveryPlan(planId);
+    if (plan.status !== 'APPROVED') {
+      throw ApiError.conflict('This recovery request is not awaiting driver acceptance.', { status: plan.status });
+    }
+    if (!plan.selectedTruckId) throw ApiError.conflict('No replacement vehicle has been selected for this recovery request.');
+    const driver = (await db.drivers.find((item) => item.userId === userId))[0];
+    if (!driver || driver.assignedTruckId === null) throw ApiError.forbidden('No assigned driver vehicle is linked to this account.');
+    const truck = await db.trucks.findById(plan.selectedTruckId);
+    if (!truck || truck.driverId !== driver.id || driver.assignedTruckId !== truck.id) {
+      throw ApiError.forbidden('This recovery request is assigned to a different driver and vehicle.');
+    }
+    if (plan.driverAcceptedAt && plan.driverAcceptedBy === driver.id) return plan;
+    if (plan.driverAcceptedAt) throw ApiError.conflict('Another driver has already accepted this recovery request.');
+    const updated = await db.recoveryPlans.update(planId, {
+      driverAcceptedBy: driver.id,
+      driverAcceptedAt: nowIso(),
+      updatedAt: nowIso(),
+    });
+    if (!updated) throw ApiError.notFound(`Recovery plan ${planId} disappeared during acceptance.`);
+    const incident = await getIncident(plan.incidentId);
+    const affectedTruck = await db.trucks.findById(incident.truckId);
+    const strandedDriver = affectedTruck?.driverId ? await db.drivers.findById(affectedTruck.driverId) : undefined;
+    if (strandedDriver) {
+      const notice = await db.notifications.create({
+        id: newId('ntf'), recipientId: strandedDriver.id, type: 'RECOVERY_DRIVER_ACCEPTED',
+        message: `The driver of replacement vehicle ${truck.id} has accepted the shipment handover. Coordinate the cargo transfer at ${incident.location}.`,
+        status: 'PENDING', createdAt: nowIso(),
+      });
+      hub.broadcast('notification.created', notice);
+    }
+    await recordEvent({ eventType: 'recovery.driver_accepted', incidentId: incident.id, truckId: truck.id, payload: { planId, replacementDriverId: driver.id, replacementTruckId: truck.id }, actorType: 'DRIVER', actorId: userId });
     hub.broadcast('recovery.updated', updated);
     return updated;
   });
@@ -368,6 +449,9 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     if (!plan.selectedTruckId) {
       throw ApiError.conflict(`Recovery plan ${planId} has no selected replacement truck, so it cannot execute.`);
     }
+    if (!plan.driverAcceptedAt || !plan.driverAcceptedBy) {
+      throw ApiError.conflict('The replacement driver must accept the recovery request before shipment handover can execute.', { required: 'DRIVER_ACCEPTANCE' });
+    }
 
     if (
       !plan.affectedShipmentIds?.length ||
@@ -384,6 +468,9 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     const targetTruck = await db.trucks.findById(plan.selectedTruckId);
     if (!originalTruck) throw ApiError.notFound(`Truck ${incident.truckId} does not exist.`);
     if (!targetTruck) throw ApiError.notFound(`Replacement truck ${plan.selectedTruckId} does not exist.`);
+    if (!targetTruck.driverId || targetTruck.driverId !== plan.driverAcceptedBy) {
+      throw ApiError.conflict('The accepting driver is no longer assigned to the selected replacement vehicle. Re-analyze recovery before proceeding.');
+    }
 
     const reassignments: ExecuteResult['reassignments'] = [];
 
