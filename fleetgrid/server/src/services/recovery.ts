@@ -320,7 +320,7 @@ export async function approveRecoveryPlan(planId: string, approvedBy: string): P
     const replacementDriver = replacementTruck?.driverId ? await db.drivers.findById(replacementTruck.driverId) : undefined;
     if (replacementDriver) {
       const notice = await db.notifications.create({
-        id: newId('ntf'), recipientId: replacementDriver.id, type: 'RECOVERY_ASSISTANCE_REQUEST',
+        id: newId('ntf'), recipientId: replacementDriver.userId, type: 'RECOVERY_ASSISTANCE_REQUEST',
         message: `Emergency assistance requested: collect shipment ${(updated.affectedShipmentIds ?? []).join(', ')} from ${affectedTruck?.id ?? 'the affected vehicle'} at ${incident.location}. Review and accept this recovery request in FleetGrid.`,
         status: 'PENDING', createdAt: nowIso(),
       });
@@ -329,7 +329,7 @@ export async function approveRecoveryPlan(planId: string, approvedBy: string): P
     const strandedDriver = affectedTruck?.driverId ? await db.drivers.findById(affectedTruck.driverId) : undefined;
     if (strandedDriver) {
       const notice = await db.notifications.create({
-        id: newId('ntf'), recipientId: strandedDriver.id, type: 'RECOVERY_CANDIDATE_FOUND',
+        id: newId('ntf'), recipientId: strandedDriver.userId, type: 'RECOVERY_CANDIDATE_FOUND',
         message: `A replacement vehicle has been identified for your shipment. Waiting for its driver to accept the handover.`,
         status: 'PENDING', createdAt: nowIso(),
       });
@@ -396,7 +396,7 @@ export async function acceptRecoveryPlan(planId: string, userId: string): Promis
     const strandedDriver = affectedTruck?.driverId ? await db.drivers.findById(affectedTruck.driverId) : undefined;
     if (strandedDriver) {
       const notice = await db.notifications.create({
-        id: newId('ntf'), recipientId: strandedDriver.id, type: 'RECOVERY_DRIVER_ACCEPTED',
+        id: newId('ntf'), recipientId: strandedDriver.userId, type: 'RECOVERY_DRIVER_ACCEPTED',
         message: `The driver of replacement vehicle ${truck.id} has accepted the shipment handover. Coordinate the cargo transfer at ${incident.location}.`,
         status: 'PENDING', createdAt: nowIso(),
       });
@@ -597,7 +597,7 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     if (targetDriver) {
       const row = await db.notifications.create({
         id: newId('ntf'),
-        recipientId: targetDriver.id,
+        recipientId: targetDriver.userId,
         type: 'RECOVERY_INSTRUCTION',
         message: `Collect ${(plan.affectedShipmentIds ?? []).join(', ')} from ${originalTruck.id} at ${incident.location} and continue to ${targetTruck.destination ?? 'the recorded destination'}.`,
         status: 'PENDING',
@@ -608,16 +608,19 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     for (const shipmentId of (plan.affectedShipmentIds ?? [])) {
       const shipment = await db.shipments.findById(shipmentId);
       if (!shipment) continue;
-      const row = await db.notifications.create({
-        id: newId('ntf'),
-        recipientId: shipment.shipperId,
-        type: 'SHIPMENT_RECOVERED',
-        message: `Shipment ${shipment.id} (${shipment.cargoName}) is being moved by ${targetTruck.id} after a breakdown near ${incident.location}. Revised ETA impact: +${plan.etaDeltaMinutes} min (demo estimate).`,
-        status: 'PENDING',
-        createdAt: nowIso(),
-      });
-      notificationIds.push(row.id);
-      hub.broadcast('notification.created', row);
+      const shipperUsers = await db.users.find((user) => user.organizationId === shipment.shipperId && user.role === 'BUSINESS');
+      for (const shipperUser of shipperUsers) {
+        const row = await db.notifications.create({
+          id: newId('ntf'),
+          recipientId: shipperUser.id,
+          type: 'SHIPMENT_RECOVERED',
+          message: `Shipment ${shipment.id} (${shipment.cargoName}) is being moved by ${targetTruck.id} after a breakdown near ${incident.location}. Revised ETA impact: +${plan.etaDeltaMinutes} min (demo estimate).`,
+          status: 'PENDING',
+          createdAt: nowIso(),
+        });
+        notificationIds.push(row.id);
+        hub.broadcast('notification.created', row);
+      }
     }
 
     const completed = await db.recoveryPlans.update(planId, {
