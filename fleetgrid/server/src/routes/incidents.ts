@@ -9,6 +9,7 @@ import { requireRoles } from '../middleware/auth.js';
 import { db } from '../store/db.js';
 import { hub } from '../services/realtime.js';
 import { ApiError } from '../lib/errors.js';
+import { newId, nowIso } from '../lib/ids.js';
 import type { User } from '../types.js';
 
 export const incidentsRouter: Router = Router();
@@ -66,12 +67,12 @@ incidentsRouter.post(
     const operationsUsers = await db.users.find((member) => ['CONTROL_TOWER', 'OPERATOR'].includes(member.role));
     for (const member of operationsUsers) {
       const notice = await db.notifications.create({
-        id: `ntf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        id: newId('ntf'),
         recipientId: member.id,
         type: 'EMERGENCY_INCIDENT',
         message: `Emergency ${body.type.replace(/_/g, ' ').toLowerCase()} reported for ${body.truckId} at ${result.incident.location}. Severity: ${result.incident.severity ?? 'unknown'}. Immediate review required.`,
         status: 'PENDING',
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso(),
       });
       hub.broadcast('notification.created', notice);
     }
@@ -79,7 +80,7 @@ incidentsRouter.post(
       const shipperUsers = await db.users.find((member) => member.organizationId === shipment.shipperId && member.role === 'BUSINESS');
       for (const member of shipperUsers) {
         const notice = await db.notifications.create({
-          id: `ntf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          id: newId('ntf'),
           recipientId: member.id,
           type: 'SHIPMENT_AT_RISK',
           message: `Shipment ${shipment.id} is at risk after a vehicle incident near ${result.incident.location}. FleetGrid is coordinating assistance and recovery options.`,
