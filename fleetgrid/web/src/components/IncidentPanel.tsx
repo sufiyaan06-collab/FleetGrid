@@ -273,7 +273,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
                     )}
                   </div>
                   {option.compatible ? (
-                    <span className="tabular text-[11px] text-ink-200">{formatMoney(option.cost, option.currency)}</span>
+                    <span className="tabular text-[11px] text-ink-200">{option.cost == null ? 'Commercial terms to be agreed' : formatMoney(option.cost, option.currency)}</span>
                   ) : (
                     <span className="text-[9px] uppercase tracking-[0.1em] text-ink-500">Incompatible</span>
                   )}
