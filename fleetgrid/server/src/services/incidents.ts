@@ -164,6 +164,48 @@ export async function setIncidentStatus(
   return updated;
 }
 
+export async function confirmVehicleRepair(incidentId: string, confirmedBy: string): Promise<{
+  incident: Incident;
+  truck: Awaited<ReturnType<typeof transitionTruck>>;
+  driver: Awaited<ReturnType<typeof db.drivers.findById>> | null;
+}> {
+  return runExclusive(async () => {
+    const incident = await getIncident(incidentId);
+    const originalTruck = await db.trucks.findById(incident.truckId);
+    if (!originalTruck) throw ApiError.notFound(`Truck ${incident.truckId} does not exist.`);
+    if (incident.status === 'RESOLVED' && originalTruck.status === 'AVAILABLE') {
+      const driver = originalTruck.driverId ? await db.drivers.findById(originalTruck.driverId) : undefined;
+      return { incident, truck: originalTruck as Awaited<ReturnType<typeof transitionTruck>>, driver: driver ?? null };
+    }
+    if (!['INCIDENT', 'RECOVERY'].includes(originalTruck.status)) {
+      throw ApiError.conflict(`Truck ${originalTruck.id} is ${originalTruck.status}; repair confirmation is only valid for a disabled incident vehicle.`);
+    }
+    const truck = await transitionTruck(originalTruck, 'AVAILABLE', {}, {
+      eventType: 'truck.repair_confirmed',
+      payload: { incidentId, confirmedBy, note: 'Operator confirmed the vehicle is repaired and safe to return to service.' },
+    });
+    const driver = truck.driverId ? await db.drivers.findById(truck.driverId) : undefined;
+    let updatedDriver = driver ?? null;
+    if (driver && ['INCIDENT_REPORTED', 'OFF_DUTY'].includes(driver.status)) {
+      updatedDriver = await db.drivers.update(driver.id, { status: 'AVAILABLE' }) ?? driver;
+      hub.broadcast('driver.updated', updatedDriver);
+    }
+    const updatedIncident = incident.status === 'RESOLVED'
+      ? incident
+      : await setIncidentStatus(incident, 'RESOLVED', { truckId: truck.id, confirmedBy, repairConfirmed: true });
+    if (driver) {
+      const notice = await db.notifications.create({
+        id: newId('ntf'), recipientId: driver.userId, type: 'VEHICLE_REPAIR_CONFIRMED',
+        message: `Control Tower confirmed that vehicle ${truck.id} is repaired and returned to AVAILABLE status.`,
+        status: 'PENDING', createdAt: nowIso(),
+      });
+      hub.broadcast('notification.created', notice);
+    }
+    hub.broadcast('incident.updated', updatedIncident);
+    return { incident: updatedIncident, truck, driver: updatedDriver };
+  });
+}
+
 function defaultSeverity(type: Incident['type']): Incident['severity'] {
   switch (type) {
     case 'ACCIDENT':
