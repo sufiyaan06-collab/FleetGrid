@@ -152,7 +152,7 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
       const leg = estimateLeg(truck.id, incidentPoint, truckPoint);
       if (!leg) return [];
 
-      const pricePerT = offer?.pricePerT !== null && Number.isFinite(offer?.pricePerT) && (offer?.pricePerT ?? 0) > 0
+      const pricePerT = offer && offer.pricePerT !== null && Number.isFinite(offer.pricePerT) && offer.pricePerT > 0
         ? offer.pricePerT
         : null;
       const cost = pricePerT === null ? null : Math.round(impact.totalWeightT * pricePerT * RECOVERY_COST_MULTIPLIER);
