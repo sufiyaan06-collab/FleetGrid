@@ -472,6 +472,7 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     }
 
     const reassignments: ExecuteResult['reassignments'] = [];
+    let targetAvailableT = targetTruck.availableT;
 
     for (const shipmentId of (plan.affectedShipmentIds ?? [])) {
       const shipment = await db.shipments.findById(shipmentId);
@@ -483,14 +484,15 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
 
       const release = await releaseCapacity(shipment, `Recovery plan ${planId} approved by ${executedBy}`);
 
-      if (targetTruck.availableT < shipment.weightT) {
+      if (targetAvailableT < shipment.weightT) {
         throw ApiError.unprocessable(
-          `Replacement truck ${targetTruck.id} now has only ${round(targetTruck.availableT)}T spare, which cannot take ${shipment.weightT}T.`,
+          `Replacement truck ${targetTruck.id} now has only ${round(targetAvailableT)}T spare, which cannot take ${shipment.weightT}T.`,
         );
       }
+      targetAvailableT = round(targetAvailableT - shipment.weightT);
 
       const decremented = await db.trucks.update(targetTruck.id, {
-        availableT: round(targetTruck.availableT - shipment.weightT),
+        availableT: targetAvailableT,
         status: targetTruck.status === 'AVAILABLE' ? 'ASSIGNED' : targetTruck.status,
       });
       if (!decremented) throw ApiError.notFound(`Truck ${targetTruck.id} disappeared during recovery.`);
@@ -549,6 +551,14 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
         fromTruckId: release.truck.id,
         toTruckId: targetTruck.id,
         releasedT: release.releasedT,
+      });
+    }
+
+    const replacementAfterHandoff = await db.trucks.findById(targetTruck.id);
+    if (replacementAfterHandoff?.status === 'ASSIGNED') {
+      await transitionTruck(replacementAfterHandoff, 'IN_TRANSIT', {}, {
+        eventType: 'truck.recovery_departure',
+        payload: { planId: plan.id, incidentId: incident.id, acceptedBy: plan.driverAcceptedBy },
       });
     }
 
