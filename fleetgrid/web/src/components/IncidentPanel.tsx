@@ -320,13 +320,18 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
 
           <div className="mt-3 flex gap-2">
             {primary && planForIncident.status === 'PENDING_APPROVAL' && (
-              <button type="button" className="btn-primary flex-1" onClick={approve} disabled={busy}>
-                {busy ? 'Approving…' : 'Approve Recovery'}
+              <button type="button" className="btn-primary flex-1" onClick={approve} disabled={busy || !planForIncident.selectedTruckId}>
+                {busy ? 'Approving…' : planForIncident.selectedTruckId ? 'Approve & notify replacement driver' : 'No eligible replacement vehicle'}
               </button>
             )}
-            {primary && planForIncident.status === 'APPROVED' && (
+            {primary && planForIncident.status === 'APPROVED' && !planForIncident.driverAcceptedAt && (
+              <div className="flex-1 rounded-md border border-warn/35 bg-warn/[0.06] px-3 py-2 text-center text-xs text-warn">
+                Waiting for the selected replacement driver to accept. Shipment handover is locked until acceptance.
+              </div>
+            )}
+            {primary && planForIncident.status === 'APPROVED' && planForIncident.driverAcceptedAt && (
               <button type="button" className="btn-primary flex-1" onClick={execute} disabled={busy}>
-                {busy ? 'Executing…' : 'Execute Recovery'}
+                {busy ? 'Executing…' : 'Execute accepted handover'}
               </button>
             )}
             {planForIncident.status === 'COMPLETED' && (
@@ -338,8 +343,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
 
           <div className="mt-2.5">
             <Placeholder>
-              Payment capture, driver notification delivery and blockchain proof anchoring are phase-2 integrations.
-              Notifications are stored as PENDING, never marked delivered.
+              Recovery requests and in-app driver notifications are recorded in FleetGrid. Physical roadside dispatch, SMS/WhatsApp delivery, live road-routing ETAs and verified physical cargo handover remain external integrations; do not treat demo estimates as guaranteed arrival times.
             </Placeholder>
           </div>
         </div>
