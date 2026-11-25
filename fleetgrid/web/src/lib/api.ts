@@ -282,6 +282,8 @@ export const api = {
       '/recovery-plans',
       { incidentId },
     ),
+  acceptRecoveryPlan: (planId: string) =>
+    post<{ ok: true; plan: RecoveryPlan }>(`/driver/recovery-plans/${encodeURIComponent(planId)}/accept`, {}),
   approvePlan: (planId: string, approvedBy: string) =>
     post<{ ok: true; plan: RecoveryPlan }>(`/recovery-plans/${planId}/approve`, { approvedBy }),
   executePlan: (planId: string, executedBy: string) =>
