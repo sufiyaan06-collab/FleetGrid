@@ -8,7 +8,6 @@ import { hub } from './realtime.js';
 import { getIncident, setIncidentStatus } from './incidents.js';
 import { getShipment, releaseCapacity, setShipmentStatus } from './shipments.js';
 import { transitionTruck } from './trucks.js';
-import { isBookableCapacityOffer } from './capacity.js';
 import { segmentFit } from '../lib/geo.js';
 import { RECOVERY_PLAN_TRANSITIONS, type RecoveryOption, type RecoveryPlan, type Truck } from '../types.js';
 
@@ -149,12 +148,14 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
     .flatMap((truck) => {
       if (truck.id === blockedTruck.id) return [];
       const offer = offers.find((candidate) => candidate.truckId === truck.id);
-      if (!offer || !isBookableCapacityOffer(offer)) return [];
       const truckPoint = pointForTruck(truck);
       const leg = estimateLeg(truck.id, incidentPoint, truckPoint);
       if (!leg) return [];
 
-      const cost = Math.round(impact.totalWeightT * offer.pricePerT * RECOVERY_COST_MULTIPLIER);
+      const pricePerT = offer?.pricePerT !== null && Number.isFinite(offer?.pricePerT) && (offer?.pricePerT ?? 0) > 0
+        ? offer.pricePerT
+        : null;
+      const cost = pricePerT === null ? null : Math.round(impact.totalWeightT * pricePerT * RECOVERY_COST_MULTIPLIER);
       const blockers: string[] = [];
       const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
       if (!driver) {
@@ -169,7 +170,7 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
         if (production && !authAccounts.some((a) => a.id === driver.userId && Boolean(a.emailVerifiedAt))) blockers.push('driver email is not verified');
       }
       if (!['AVAILABLE', 'ASSIGNED', 'IN_TRANSIT'].includes(truck.status)) blockers.push(`truck is ${truck.status.toLowerCase().replace('_', ' ')}`);
-      if (offer.status !== 'OPEN') blockers.push(`capacity offer is ${offer.status.toLowerCase()}`);
+      if (offer?.status === 'CLOSED') blockers.push('capacity offer is closed');
       if (truck.availableT < impact.totalWeightT) {
         blockers.push(`insufficient spare capacity (${round(truck.availableT)}T < ${impact.totalWeightT}T)`);
       }
@@ -183,7 +184,6 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
       if (UNAVAILABLE_RECOVERY_STATES.has(truck.status)) {
         blockers.push(`truck is ${truck.status}`);
       }
-      if (offer.status === 'CLOSED') blockers.push('capacity offer closed');
 
       const facts = [
         `${round(truck.availableT)}T spare`,
@@ -263,7 +263,7 @@ export async function createRecoveryPlan(incidentId: string): Promise<CreatePlan
       affectedShipmentIds: impact.affectedShipments.map((s) => s.id),
       options,
       selectedTruckId: selected?.truckId ?? null,
-      cost: selected?.cost ?? 0,
+      cost: selected?.cost ?? null,
       etaDeltaMinutes: selected ? selected.etaMinutes + CARGO_TRANSFER_MINUTES : 0,
       status: 'PENDING_APPROVAL',
       approvedBy: null,
@@ -456,7 +456,6 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
 
     if (
       !plan.affectedShipmentIds?.length ||
-      plan.cost === null ||
       plan.etaDeltaMinutes === null ||
       !plan.options?.length
     ) {
