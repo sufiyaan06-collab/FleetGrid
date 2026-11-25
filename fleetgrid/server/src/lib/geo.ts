@@ -79,7 +79,7 @@ export function resolveLocation(raw: string): {
   progress: number;
   simulated: boolean;
 } {
-  const coordinateMatch = raw.trim().match(/^(?:GPS coordinates:\\s*)?(-?\\d{1,2}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)$/i);
+  const coordinateMatch = raw.trim().match(/^(?:GPS coordinates:\s*)?(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/i);
   if (coordinateMatch) {
     const lat = Number(coordinateMatch[1]);
     const lng = Number(coordinateMatch[2]);
