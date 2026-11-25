@@ -7,9 +7,9 @@ test.describe('FleetGrid browser and API integration', () => {
 
     await page.goto('/');
     await expect(page.getByRole('heading', { name: /Move freight/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Create your account', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create your account', exact: true }).first()).toBeVisible();
 
-    await page.getByRole('button', { name: 'Shipper sign in', exact: true }).click();
+    await page.getByRole('button', { name: 'Shipper sign in', exact: true }).first().click();
     await expect(page.getByRole('heading', { name: 'Sign in to Shipper' })).toBeVisible();
     await expect(page.getByLabel('Email address')).toBeVisible();
     await expect(page.getByLabel('Password')).toBeVisible();
@@ -21,13 +21,13 @@ test.describe('FleetGrid browser and API integration', () => {
     expect(failedRequests.filter(url => url.includes('/auth/login'))).toHaveLength(0);
 
     await page.getByRole('button', { name: /Back to FleetGrid/i }).click();
-    await page.getByRole('button', { name: 'Create your account', exact: true }).click();
+    await page.getByRole('button', { name: 'Create your account', exact: true }).first().click();
     await expect(page.getByRole('heading', { name: 'Create your FleetGrid account' })).toBeVisible();
   });
 
   test('registration switches roles and fails closed when email delivery is not configured', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: 'Create your account', exact: true }).click();
+    await page.getByRole('button', { name: 'Create your account', exact: true }).first().click();
     await expect(page.getByRole('heading', { name: 'Create your FleetGrid account' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Driver / Fleet Operator' }).click();
@@ -61,7 +61,7 @@ test.describe('FleetGrid browser and API integration', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
     await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('button', { name: 'Driver sign in', exact: true }).click();
+    await page.getByRole('button', { name: 'Driver sign in', exact: true }).first().click();
     await expect(page.getByRole('heading', { name: 'Sign in to Driver' })).toBeVisible();
     await expect(page.getByText(/only authorised Admin/i)).toHaveCount(0);
   });
@@ -83,10 +83,10 @@ test('public portal entry points keep shipper, driver and administrator sign-ins
   await expect(page.getByText(/only authorised Admin \/ Operations accounts/i)).toBeVisible();
 
   await page.getByRole('button', { name: /Back to FleetGrid/i }).click();
-  await page.getByRole('button', { name: 'Driver sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Driver sign in', exact: true }).first().click();
   await expect(page.getByRole('heading', { name: 'Sign in to Driver' })).toBeVisible();
 
   await page.getByRole('button', { name: /Back to FleetGrid/i }).click();
-  await page.getByRole('button', { name: 'Shipper sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Shipper sign in', exact: true }).first().click();
   await expect(page.getByRole('heading', { name: 'Sign in to Shipper' })).toBeVisible();
 });
