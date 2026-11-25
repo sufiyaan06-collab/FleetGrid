@@ -199,7 +199,7 @@ export function Driver() {
     pending.length === 0;
 
   const inTransit = truck?.status === 'IN_TRANSIT';
-  const isSosIncident = truck?.status === 'INCIDENT' || myIncidents.some((i) => i.status === 'OPEN' || i.status === 'ANALYZING');
+  const isSosIncident = truck?.status === 'INCIDENT' || myIncidents.some((i) => ['OPEN', 'ANALYZING', 'PLAN_READY', 'ESCALATED'].includes(i.status));
   const recoveryOffers = useMemo(
     () => snapshot.recoveryPlans.filter((plan) => plan.selectedTruckId === truckId && plan.status === 'APPROVED'),
     [snapshot.recoveryPlans, truckId],
