@@ -25,10 +25,16 @@ const INCIDENT_TYPES: Array<{ value: IncidentType; label: string; defaultLocatio
 ];
 
 const EMERGENCY_REASONS = [
-  { id: 'engine_fire', label: '🔥 Engine Failure / Smoke', desc: 'Critical mechanical breakdown; vehicle immobilized on highway shoulder' },
-  { id: 'accident', label: '💥 Highway Collision / Accident', desc: 'Involved in collision; medical & tow support requested' },
-  { id: 'hijack_hazard', label: '🚨 Road Blockade / Cargo Threat', desc: 'Hostile obstruction or unauthorized vehicle stoppage' },
-  { id: 'medical', label: '🏥 Driver Medical Emergency', desc: 'Sudden illness or fatigue; immediate relief driver required' },
+  { id: 'engine_fire', label: '🔥 Engine Failure / Smoke', desc: 'Critical engine breakdown; vehicle immobilized' },
+  { id: 'tyre', label: '🛞 Tyre Puncture / Burst', desc: 'Tyre failure; vehicle cannot safely continue' },
+  { id: 'overheating', label: '🌡️ Engine Overheating', desc: 'Engine temperature critical; vehicle stopped safely' },
+  { id: 'brakes', label: '🛑 Brake / Steering Failure', desc: 'Vehicle control issue; immediate safety assistance required' },
+  { id: 'fuel_battery', label: '⛽ Fuel / Battery Failure', desc: 'Vehicle immobilized due to fuel or electrical failure' },
+  { id: 'accident', label: '💥 Highway Collision / Accident', desc: 'Collision or road accident; medical and towing support requested' },
+  { id: 'hijack_hazard', label: '🚨 Road Blockade / Cargo Threat', desc: 'Road obstruction or cargo security threat' },
+  { id: 'cargo', label: '📦 Cargo Damage / Load Shift', desc: 'Cargo damaged, shifted or unsafe to transport' },
+  { id: 'medical', label: '🏥 Driver Medical Emergency', desc: 'Sudden illness or fatigue; immediate assistance required' },
+  { id: 'other', label: '❔ Other Emergency', desc: 'Another urgent transportation problem; see driver details' },
 ];
 
 
@@ -74,6 +80,7 @@ export function Driver() {
   const [sosModalOpen, setSosModalOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [selectedSosReason, setSelectedSosReason] = useState(EMERGENCY_REASONS[0]?.id ?? 'engine_fire');
+  const [emergencyDetails, setEmergencyDetails] = useState('');
   const [gpsSharing, setGpsSharing] = useState(false);
   const [gpsMessage, setGpsMessage] = useState('Location sharing is off.');
   const lastGpsSentAt = useRef(0);
@@ -299,10 +306,11 @@ export function Driver() {
         type: 'TRUCK_BREAKDOWN',
         location: loc,
         severity: 'CRITICAL',
-        description: `🚨 CRITICAL EMERGENCY SOS: Driver ${activeDriver?.name ?? 'Driver'} triggered panic beacon. ${reasonText}. Vehicle immobilized on highway. Control Tower response requested.`,
+        description: `🚨 CRITICAL EMERGENCY SOS: Driver ${activeDriver?.name ?? 'Driver'} triggered panic beacon. ${reasonText}. ${emergencyDetails.trim() ? `Driver details: ${emergencyDetails.trim()}. ` : ''}Vehicle stopped on route. Control Tower response requested.`,
         ...(driverId ? { actorId: driverId } : {}),
       });
       setSosModalOpen(false);
+      setEmergencyDetails('');
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : (err as Error).message);
@@ -949,6 +957,10 @@ export function Driver() {
               <label className="mt-4 block">
                 <span className="text-2xs font-bold uppercase tracking-wider text-ink-400">Current location / nearest landmark (GPS will be requested)</span>
                 <input className="field mt-1" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Hosur toll plaza / NH 48" />
+              </label>
+              <label className="mt-4 block">
+                <span className="text-2xs font-bold uppercase tracking-wider text-ink-400">Describe the problem (optional)</span>
+                <textarea className="field mt-1 min-h-[76px]" maxLength={250} value={emergencyDetails} onChange={(e) => setEmergencyDetails(e.target.value)} placeholder="Describe what happened, warning lights, vehicle condition or help required…" />
               </label>
               <div className="mt-3 rounded-md border border-base-700 bg-base-950 p-3 text-[11px] text-ink-400">
                 Vehicle: <strong className="text-ink-100">{truck?.id} ({truck?.registrationNo})</strong><br />
