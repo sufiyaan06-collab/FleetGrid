@@ -519,7 +519,15 @@ async function main(): Promise<void> {
     check('Breakdown driver remains marked INCIDENT_REPORTED pending roadside assistance',
       finalDriver027?.status === 'INCIDENT_REPORTED', finalDriver027);
   check('FG-041 spent 1.0T → 2.1T spare', finalTruck041?.availableT === 2.1, finalTruck041);
-  check('Incident resolved', finalState.body.incidents.find((i: any) => i.id === incidentId)?.status === 'RESOLVED');
+  check('Shipment recovery completes while the disabled-vehicle incident remains open for repair',
+    finalState.body.incidents.find((i: any) => i.id === incidentId)?.status === 'PLAN_READY');
+
+  const repairConfirmed = await api(`/incidents/${incidentId}/repair-confirmed`, { method: 'POST', body: JSON.stringify({}) });
+  check('Control Tower can confirm repair and return the original vehicle to service', repairConfirmed.status === 200 && repairConfirmed.body.truck?.status === 'AVAILABLE', repairConfirmed.body);
+  const afterRepair = await api('/state');
+  check('Repair confirmation closes the incident', afterRepair.body.incidents.find((i: any) => i.id === incidentId)?.status === 'RESOLVED');
+  check('Breakdown driver returns to AVAILABLE only after repair confirmation',
+    afterRepair.body.drivers.find((d: any) => d.assignedTruckId === 'FG-027')?.status === 'AVAILABLE');
 
   section('10. Timeline + proof honesty');
   const timeline = await api(`/shipments/${shipmentId}/timeline`);
