@@ -199,7 +199,7 @@ export interface RecoveryOption {
   availableT: number;
   etaMinutes: number;
   distanceKm: number;
-  cost: number;
+  cost: number | null;
   currency: string;
   compatible: boolean;
   reason: string;
