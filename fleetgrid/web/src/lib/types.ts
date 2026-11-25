@@ -182,6 +182,8 @@ export interface RecoveryPlan {
   status: RecoveryPlanStatus;
   approvedBy: string | null;
   approvedAt: string | null;
+  driverAcceptedBy?: string | null;
+  driverAcceptedAt?: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
