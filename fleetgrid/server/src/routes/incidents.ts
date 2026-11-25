@@ -1,6 +1,7 @@
 ﻿import { Router } from 'express';
 import { z } from 'zod';
 import { createIncident, getIncident, listIncidents } from '../services/incidents.js';
+import { createRecoveryPlan } from '../services/recovery.js';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
@@ -59,11 +60,19 @@ incidentsRouter.post(
       source: user.role === 'DRIVER' ? 'DRIVER_APP' : body.source,
       actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? body.actorId ?? null : user.id,
     });
+    // Breakdown and accident alerts immediately prepare a recovery proposal for the
+    // Control Tower. The proposal is NOT executed automatically: operator approval
+    // and replacement-driver acceptance are still mandatory before cargo can move.
+    const recovery = ['TRUCK_BREAKDOWN', 'ACCIDENT'].includes(body.type) && result.affectedShipments.length > 0
+      ? await createRecoveryPlan(result.incident.id)
+      : null;
     res.status(201).json({
       ok: true,
       incident: result.incident,
       truck: result.truck,
       affectedShipments: result.affectedShipments,
+      recoveryPlan: recovery?.plan ?? null,
+      recoveryOptions: recovery?.options ?? [],
     });
   }),
 );
