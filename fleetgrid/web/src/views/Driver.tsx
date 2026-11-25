@@ -303,7 +303,7 @@ export function Driver() {
     try {
       await api.createIncident({
         truckId: truck.id,
-        type: 'TRUCK_BREAKDOWN',
+        type: chosen?.id === 'accident' ? 'ACCIDENT' : chosen?.id === 'cargo' ? 'CARGO_DAMAGE' : chosen?.id === 'hijack_hazard' ? 'ROUTE_BLOCKED' : 'TRUCK_BREAKDOWN',
         location: loc,
         severity: 'CRITICAL',
         description: `🚨 CRITICAL EMERGENCY SOS: Driver ${activeDriver?.name ?? 'Driver'} triggered panic beacon. ${reasonText}. ${emergencyDetails.trim() ? `Driver details: ${emergencyDetails.trim()}. ` : ''}Vehicle stopped on route. Control Tower response requested.`,
