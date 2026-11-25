@@ -489,11 +489,11 @@ async function main(): Promise<void> {
 
   const recoveryState = await api('/state');
   const replacementDriver = recoveryState.body.drivers.find((d: any) => d.assignedTruckId === 'FG-041');
-  const accepted = await api(`/driver/recovery-plans/${planId}/accept`, {
+  const recoveryAccepted = await api(`/driver/recovery-plans/${planId}/accept`, {
     method: 'POST',
     body: JSON.stringify({ driverId: replacementDriver?.id }),
   });
-  check('Only the selected replacement driver can accept the handover', accepted.status === 200 && accepted.body.plan?.driverAcceptedBy === replacementDriver?.id, accepted.body);
+  check('Only the selected replacement driver can accept the handover', recoveryAccepted.status === 200 && recoveryAccepted.body.plan?.driverAcceptedBy === replacementDriver?.id, recoveryAccepted.body);
 
   const executed = await api(`/recovery-plans/${planId}/execute`, {
     method: 'POST',
