@@ -173,6 +173,12 @@ export async function confirmVehicleRepair(incidentId: string, confirmedBy: stri
     const incident = await getIncident(incidentId);
     const originalTruck = await db.trucks.findById(incident.truckId);
     if (!originalTruck) throw ApiError.notFound(`Truck ${incident.truckId} does not exist.`);
+    if (incident.recoveryPlanId) {
+      const plan = await db.recoveryPlans.findById(incident.recoveryPlanId);
+      if (plan && plan.status !== 'COMPLETED') {
+        throw ApiError.conflict('Complete the shipment recovery handover before confirming the original vehicle repair.', { recoveryPlanStatus: plan.status });
+      }
+    }
     if (incident.status === 'RESOLVED' && originalTruck.status === 'AVAILABLE') {
       const driver = originalTruck.driverId ? await db.drivers.findById(originalTruck.driverId) : undefined;
       return { incident, truck: originalTruck as Awaited<ReturnType<typeof transitionTruck>>, driver: driver ?? null };
