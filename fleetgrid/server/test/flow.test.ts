@@ -513,11 +513,11 @@ async function main(): Promise<void> {
   const finalState = await api('/state');
   const finalTruck027 = finalState.body.trucks.find((t: any) => t.id === 'FG-027');
   const finalTruck041 = finalState.body.trucks.find((t: any) => t.id === 'FG-041');
-    check('FG-027 recovered its 1T → 3.8T spare and returned to service',
-      finalTruck027?.availableT === 3.8 && finalTruck027?.status === 'AVAILABLE', finalTruck027);
+    check('FG-027 remains out of service in RECOVERY until repair is confirmed',
+      finalTruck027?.availableT === 3.8 && finalTruck027?.status === 'RECOVERY', finalTruck027);
     const finalDriver027 = finalState.body.drivers.find((d: any) => d.assignedTruckId === 'FG-027');
-    check('FG-027 driver released back to AVAILABLE',
-      finalDriver027?.status === 'AVAILABLE', finalDriver027);
+    check('Breakdown driver remains marked INCIDENT_REPORTED pending roadside assistance',
+      finalDriver027?.status === 'INCIDENT_REPORTED', finalDriver027);
   check('FG-041 spent 1.0T → 2.1T spare', finalTruck041?.availableT === 2.1, finalTruck041);
   check('Incident resolved', finalState.body.incidents.find((i: any) => i.id === incidentId)?.status === 'RESOLVED');
 
