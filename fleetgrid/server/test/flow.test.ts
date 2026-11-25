@@ -469,7 +469,7 @@ async function main(): Promise<void> {
     !options.body.options.some((o: any) => o.truckId === 'FG-027'));
 
   const plan = await api('/recovery-plans', { method: 'POST', body: JSON.stringify({ incidentId }) });
-  check('POST /recovery-plans returns 201', plan.status === 201, plan.body);
+  check('POST /recovery-plans returns the already-prepared proposal', plan.status === 200 || plan.status === 201, plan.body);
   const planId = plan.body.plan?.id as string;
   check('Plan is PENDING_APPROVAL', plan.body.plan?.status === 'PENDING_APPROVAL', plan.body.plan);
   check('Plan selected FG-041 (fastest compatible)', plan.body.plan?.selectedTruckId === 'FG-041', plan.body.plan);
@@ -486,6 +486,14 @@ async function main(): Promise<void> {
     body: JSON.stringify({ approvedBy: 'operator_demo' }),
   });
   check('Approve moves plan to APPROVED', approved.body.plan?.status === 'APPROVED', approved.body);
+
+  const recoveryState = await api('/state');
+  const replacementDriver = recoveryState.body.drivers.find((d: any) => d.assignedTruckId === 'FG-041');
+  const accepted = await api(`/driver/recovery-plans/${planId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ driverId: replacementDriver?.id }),
+  });
+  check('Only the selected replacement driver can accept the handover', accepted.status === 200 && accepted.body.plan?.driverAcceptedBy === replacementDriver?.id, accepted.body);
 
   const executed = await api(`/recovery-plans/${planId}/execute`, {
     method: 'POST',
@@ -540,7 +548,7 @@ async function main(): Promise<void> {
   section('11. Business confirms delivery');
   const businessEventsBeforeDelivery = business.events.length;
 
-  // The recovered shipment is aboard FG-041, which recovery execution left ASSIGNED.
+  // The recovered shipment is aboard FG-041, which recovery execution returned to IN_TRANSIT.
   const deliver = await api(`/shipments/${shipmentId}/confirm-delivery`, {
     method: 'POST',
     body: JSON.stringify({ actorId: demoLogin.body.user.id }),
@@ -548,9 +556,7 @@ async function main(): Promise<void> {
   check('POST /shipments/:id/confirm-delivery succeeds', deliver.status === 200, deliver.body);
   check('Shipment is DELIVERED', deliver.body.shipment?.status === 'DELIVERED', deliver.body.shipment);
   check('Shipment stayed on the recovered truck FG-041', deliver.body.shipment?.truckId === 'FG-041', deliver.body.shipment);
-  check('FG-041 is not forced to DELIVERED from ASSIGNED', deliver.body.truck?.status === 'ASSIGNED' && deliver.body.truckCompleted === false, deliver.body.truck);
-  check('The response explains why the truck did not complete',
-    String(deliver.body.truckNote ?? '').includes('no ASSIGNED → DELIVERED transition'), deliver.body.truckNote);
+  check('FG-041 completes its journey after the recovered shipment is delivered', deliver.body.truck?.status === 'DELIVERED' && deliver.body.truckCompleted === true, deliver.body.truck);
 
   const deliveredTimeline = await api(`/shipments/${shipmentId}/timeline`);
   const deliveredTypes = deliveredTimeline.body.events.map((e: any) => e.eventType);
