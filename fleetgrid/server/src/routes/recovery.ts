@@ -1,6 +1,7 @@
 ﻿import { Router } from 'express';
 import { z } from 'zod';
 import {
+  acceptRecoveryPlan,
   approveRecoveryPlan,
   createRecoveryPlan,
   executeRecoveryPlan,
@@ -13,8 +14,20 @@ import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
 import { requireRoles } from '../middleware/auth.js';
+import type { User } from '../types.js';
 
 export const recoveryRouter: Router = Router();
+
+// A replacement driver can accept only the recovery request for their own assigned truck.
+recoveryRouter.post(
+  '/driver/recovery-plans/:id/accept',
+  requireRoles('DRIVER'),
+  asyncHandler(async (req, res) => {
+    const user = res.locals.authUser as User;
+    const plan = await acceptRecoveryPlan(requiredParam(req, 'id'), user.id);
+    res.json({ ok: true, plan });
+  }),
+);
 
 // Recovery plans change fleet-wide assignments and require an operations role.
 recoveryRouter.use('/recovery-plans', requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'));
