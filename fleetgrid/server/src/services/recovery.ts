@@ -245,6 +245,22 @@ export async function createRecoveryPlan(incidentId: string): Promise<CreatePlan
     const existing = await db.recoveryPlans.find((p) => p.incidentId === incidentId);
     if (existing.length > 0) {
       const plan = existing[0] as RecoveryPlan;
+      // If no eligible replacement was available at the time of the SOS, allow
+      // the Control Tower to recheck later while the plan is still awaiting approval.
+      if (plan.status === 'PENDING_APPROVAL' && !plan.selectedTruckId) {
+        const compatible = options.filter((option) => option.compatible);
+        const selected = compatible[0] ?? null;
+        const refreshed = await db.recoveryPlans.update(plan.id, {
+          options,
+          selectedTruckId: selected?.truckId ?? null,
+          cost: selected?.cost ?? null,
+          etaDeltaMinutes: selected ? selected.etaMinutes + CARGO_TRANSFER_MINUTES : 0,
+          updatedAt: nowIso(),
+        });
+        if (!refreshed) throw ApiError.notFound(`Recovery plan ${plan.id} disappeared during recheck.`);
+        hub.broadcast('recovery.updated', refreshed);
+        return { plan: refreshed, incident, options, created: false };
+      }
       return { plan, incident, options: plan.options ?? [], created: false };
     }
 
