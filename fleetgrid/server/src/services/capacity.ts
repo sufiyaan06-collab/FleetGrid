@@ -413,14 +413,15 @@ export async function suggestNearbyCapacity(input: {
         canAlsoCarry: input.weightT ? m.truck.availableT >= input.weightT : true,
       };
     })
-    // Genuinely usable first, then nearest — the driver-helpful ordering.
+    // Keep suggestions in true proximity order; compatibility blockers remain
+    // visible on each option so the user can distinguish nearby but unusable trucks.
     .sort((a, b) => {
-      const aBlocked = a.blockers.length > 0;
-      const bBlocked = b.blockers.length > 0;
-      if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
       const ad = a.distanceFromSelectedKm ?? Number.POSITIVE_INFINITY;
       const bd = b.distanceFromSelectedKm ?? Number.POSITIVE_INFINITY;
       if (ad !== bd) return ad - bd;
+      const aBlocked = a.blockers.length > 0;
+      const bBlocked = b.blockers.length > 0;
+      if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
       return b.truck.availableT - a.truck.availableT;
     })
     .slice(0, input.limit ?? 5);
