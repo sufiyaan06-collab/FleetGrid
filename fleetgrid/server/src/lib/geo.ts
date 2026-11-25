@@ -79,6 +79,14 @@ export function resolveLocation(raw: string): {
   progress: number;
   simulated: boolean;
 } {
+  const coordinateMatch = raw.trim().match(/^(?:GPS coordinates:\\s*)?(-?\\d{1,2}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)$/i);
+  if (coordinateMatch) {
+    const lat = Number(coordinateMatch[1]);
+    const lng = Number(coordinateMatch[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { label: `GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}`, lat, lng, progress: Number.NaN, simulated: false };
+    }
+  }
   const label = canonicalLocation(raw);
   const corridor = ROUTE_CORRIDOR.find((node) => node.city === label);
   if (corridor) {
