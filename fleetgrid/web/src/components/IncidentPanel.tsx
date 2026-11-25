@@ -65,6 +65,22 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
     }
   }
 
+  async function recheckCapacity() {
+    if (!anchor) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.createRecoveryPlan(anchor.id);
+      setPlan(res.plan);
+      setOptions(res.options);
+      onAction();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function approve() {
     if (!planForIncident) return;
     setBusy(true);
@@ -330,6 +346,12 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
                     ))}
               </div>
             </div>
+          )}
+
+          {primary && planForIncident.status === 'PENDING_APPROVAL' && !planForIncident.selectedTruckId && (
+            <button type="button" className="btn-secondary mt-3 w-full" onClick={recheckCapacity} disabled={busy}>
+              {busy ? 'Checking nearby vehicles…' : 'Recheck nearby vehicles'}
+            </button>
           )}
 
           <div className="mt-3 flex gap-2">
