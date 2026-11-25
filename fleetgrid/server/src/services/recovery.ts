@@ -561,6 +561,11 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
         payload: { planId: plan.id, incidentId: incident.id, acceptedBy: plan.driverAcceptedBy },
       });
     }
+    const replacementDriverProfile = targetTruck.driverId ? await db.drivers.findById(targetTruck.driverId) : undefined;
+    if (replacementDriverProfile?.status === 'AVAILABLE') {
+      await db.drivers.update(replacementDriverProfile.id, { status: 'ON_JOURNEY' });
+      hub.broadcast('driver.updated', await db.drivers.findById(replacementDriverProfile.id));
+    }
 
     if (originalTruck.status === 'INCIDENT') {
       await transitionTruck(originalTruck, 'RECOVERY', {}, {
@@ -621,19 +626,13 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     });
     if (!completed) throw ApiError.notFound(`Recovery plan ${planId} disappeared during execution.`);
 
-    // The cargo has been moved off the disabled truck, so it goes back into service
-    // rather than staying stranded in RECOVERY. Demo assumption: repaired on site.
-    const releasedTruck = await db.trucks.findById(originalTruck.id);
-    if (releasedTruck && releasedTruck.status === 'RECOVERY') {
-      const backInService = await transitionTruck(releasedTruck, 'AVAILABLE', {}, {
-        eventType: 'truck.returned_to_service',
-        payload: { planId: plan.id, incidentId: incident.id },
-      });
-      const releasedDriver = backInService.driverId ? await db.drivers.findById(backInService.driverId) : undefined;
-      if (releasedDriver && releasedDriver.status === 'ON_JOURNEY') {
-        await db.drivers.update(releasedDriver.id, { status: 'AVAILABLE' });
-        hub.broadcast('driver.updated', await db.drivers.findById(releasedDriver.id));
-      }
+    // The original vehicle is still mechanically disabled. Keep it in RECOVERY
+    // until an operator explicitly confirms repair; transferring the shipment must
+    // never falsely mark a broken-down truck as roadworthy.
+    const strandedDriver = originalTruck.driverId ? await db.drivers.findById(originalTruck.driverId) : undefined;
+    if (strandedDriver && strandedDriver.status === 'ON_JOURNEY') {
+      await db.drivers.update(strandedDriver.id, { status: 'INCIDENT_REPORTED' });
+      hub.broadcast('driver.updated', await db.drivers.findById(strandedDriver.id));
     }
 
     await recordEvent({
