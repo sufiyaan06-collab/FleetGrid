@@ -206,7 +206,9 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
     .sort((a, b) => {
       if (a.compatible !== b.compatible) return a.compatible ? -1 : 1;
       if (a.etaMinutes !== b.etaMinutes) return a.etaMinutes - b.etaMinutes;
-      return a.cost - b.cost;
+      if (a.cost === null && b.cost !== null) return 1;
+      if (a.cost !== null && b.cost === null) return -1;
+      return (a.cost ?? 0) - (b.cost ?? 0);
     });
   void incident;
   return { impact, options };
