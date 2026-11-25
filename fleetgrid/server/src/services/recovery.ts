@@ -9,6 +9,7 @@ import { getIncident, setIncidentStatus } from './incidents.js';
 import { getShipment, releaseCapacity, setShipmentStatus } from './shipments.js';
 import { transitionTruck } from './trucks.js';
 import { isBookableCapacityOffer } from './capacity.js';
+import { segmentFit } from '../lib/geo.js';
 import { RECOVERY_PLAN_TRANSITIONS, type RecoveryOption, type RecoveryPlan, type Truck } from '../types.js';
 
 /**
@@ -172,11 +173,12 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
       if (truck.availableT < impact.totalWeightT) {
         blockers.push(`insufficient spare capacity (${round(truck.availableT)}T < ${impact.totalWeightT}T)`);
       }
-      if (!truck.destination || truck.destination !== impact.destination) {
-        blockers.push(`does not deliver to ${impact.destination}`);
-      }
-      if (!truck.origin || truck.origin !== impact.origin) {
-        blockers.push(`does not pick up from ${impact.origin}`);
+      const coversAffectedRoutes = impact.affectedShipments.every((shipment) => {
+        const fit = segmentFit(truck.origin, truck.destination, shipment.origin, shipment.destination);
+        return fit === 'EXACT' || fit === 'PARTIAL';
+      });
+      if (!coversAffectedRoutes) {
+        blockers.push('route does not cover every affected shipment in the same direction');
       }
       if (UNAVAILABLE_RECOVERY_STATES.has(truck.status)) {
         blockers.push(`truck is ${truck.status}`);
