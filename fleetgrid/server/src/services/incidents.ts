@@ -192,7 +192,11 @@ export async function confirmVehicleRepair(incidentId: string, confirmedBy: stri
     });
     const driver = truck.driverId ? await db.drivers.findById(truck.driverId) : undefined;
     let updatedDriver = driver ?? null;
-    if (driver && ['INCIDENT_REPORTED', 'OFF_DUTY'].includes(driver.status)) {
+    // Vehicle repair does not medically clear a driver or cancel a pre-existing
+    // off-duty state. Only a driver stopped by a mechanical breakdown is
+    // automatically returned to AVAILABLE; accident/medical/other incidents
+    // require a separate human safety clearance workflow.
+    if (driver && incident.type === 'TRUCK_BREAKDOWN' && driver.status === 'INCIDENT_REPORTED') {
       updatedDriver = await db.drivers.update(driver.id, { status: 'AVAILABLE' }) ?? driver;
       hub.broadcast('driver.updated', updatedDriver);
     }
