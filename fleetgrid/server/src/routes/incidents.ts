@@ -94,9 +94,16 @@ incidentsRouter.post(
     // Breakdown and accident alerts immediately prepare a recovery proposal for the
     // Control Tower. The proposal is NOT executed automatically: operator approval
     // and replacement-driver acceptance are still mandatory before cargo can move.
-    const recovery = ['TRUCK_BREAKDOWN', 'ACCIDENT'].includes(body.type) && result.affectedShipments.length > 0
-      ? await createRecoveryPlan(result.incident.id)
-      : null;
+    let recovery: Awaited<ReturnType<typeof createRecoveryPlan>> | null = null;
+    let recoveryError: string | null = null;
+    if (['TRUCK_BREAKDOWN', 'ACCIDENT'].includes(body.type) && result.affectedShipments.length > 0) {
+      try {
+        recovery = await createRecoveryPlan(result.incident.id);
+      } catch (error) {
+        recoveryError = (error as Error).message;
+        console.error('[fleetgrid] emergency recovery analysis could not be prepared:', recoveryError);
+      }
+    }
     res.status(201).json({
       ok: true,
       incident: result.incident,
@@ -104,6 +111,7 @@ incidentsRouter.post(
       affectedShipments: result.affectedShipments,
       recoveryPlan: recovery?.plan ?? null,
       recoveryOptions: recovery?.options ?? [],
+      recoveryError,
     });
   }),
 );
