@@ -3,6 +3,7 @@ import type {
   CapacityOptions,
   CapacityMatch,
   DemoLoginResponse,
+  Driver,
   FleetSnapshot,
   Incident,
   Payment,
