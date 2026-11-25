@@ -14,17 +14,25 @@ import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
 import { requireRoles } from '../middleware/auth.js';
+import { db } from '../store/db.js';
 import type { User } from '../types.js';
 
 export const recoveryRouter: Router = Router();
 
 // A replacement driver can accept only the recovery request for their own assigned truck.
+const driverAcceptSchema = z.object({ driverId: z.string().min(2).optional() });
 recoveryRouter.post(
   '/driver/recovery-plans/:id/accept',
   requireRoles('DRIVER'),
+  validateBody(driverAcceptSchema),
   asyncHandler(async (req, res) => {
     const user = res.locals.authUser as User;
-    const plan = await acceptRecoveryPlan(requiredParam(req, 'id'), user.id);
+    const body = req.body as z.infer<typeof driverAcceptSchema>;
+    // Test-only identity shim; production always derives the driver from the signed-in session.
+    const testDriver = process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' && body.driverId
+      ? await db.drivers.findById(body.driverId)
+      : undefined;
+    const plan = await acceptRecoveryPlan(requiredParam(req, 'id'), testDriver?.userId ?? user.id);
     res.json({ ok: true, plan });
   }),
 );
