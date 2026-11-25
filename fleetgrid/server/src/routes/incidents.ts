@@ -1,6 +1,6 @@
 ﻿import { Router } from 'express';
 import { z } from 'zod';
-import { createIncident, getIncident, listIncidents } from '../services/incidents.js';
+import { confirmVehicleRepair, createIncident, getIncident, listIncidents } from '../services/incidents.js';
 import { createRecoveryPlan } from '../services/recovery.js';
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
@@ -128,6 +128,16 @@ incidentsRouter.get(
         : [];
     }
     res.json({ incidents, count: incidents.length });
+  }),
+);
+
+incidentsRouter.post(
+  '/incidents/:id/repair-confirmed',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
+  asyncHandler(async (req, res) => {
+    const user = res.locals.authUser as User;
+    const result = await confirmVehicleRepair(requiredParam(req, 'id'), user.id);
+    res.json({ ok: true, ...result });
   }),
 );
 
