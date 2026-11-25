@@ -216,6 +216,9 @@ export interface RecoveryPlan {
   status: RecoveryPlanStatus;
   approvedBy: string | null;
   approvedAt: string | null;
+  /** The authenticated replacement driver must accept before cargo can be reassigned. */
+  driverAcceptedBy?: string | null;
+  driverAcceptedAt?: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
