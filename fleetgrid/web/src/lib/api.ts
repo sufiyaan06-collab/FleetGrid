@@ -265,6 +265,8 @@ export const api = {
     post<{ ok: true; incident: Incident; truck: Truck; affectedShipments: Shipment[] }>('/incidents', input),
   incidents: () => request<{ incidents: Incident[] }>('/incidents'),
   incident: (id: string) => request<{ incident: Incident }>(`/incidents/${id}`),
+  confirmVehicleRepair: (incidentId: string) =>
+    post<{ ok: true; incident: Incident; truck: Truck; driver: Driver | null }>(`/incidents/${encodeURIComponent(incidentId)}/repair-confirmed`, {}),
 
   recoveryOptions: (incidentId: string) =>
     request<{
