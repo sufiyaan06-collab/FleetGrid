@@ -55,7 +55,7 @@ export function ControlTower() {
     [events],
   );
 
-  const openIncident = incidents.find((i) => i.status === 'OPEN' || i.status === 'ANALYZING') ?? null;
+  const openIncident = incidents.find((i) => ['OPEN', 'ANALYZING', 'PLAN_READY', 'ESCALATED'].includes(i.status)) ?? null;
   const incidentTruck = trucks.find((t) => t.status === 'INCIDENT') ?? (openIncident ? trucks.find((t) => t.id === openIncident.truckId) : null);
   const hasIncident = counts.incident > 0 || Boolean(openIncident);
 
