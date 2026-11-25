@@ -200,6 +200,10 @@ export function Driver() {
 
   const inTransit = truck?.status === 'IN_TRANSIT';
   const isSosIncident = truck?.status === 'INCIDENT' || myIncidents.some((i) => i.status === 'OPEN' || i.status === 'ANALYZING');
+  const recoveryOffers = useMemo(
+    () => snapshot.recoveryPlans.filter((plan) => plan.selectedTruckId === truckId && plan.status === 'APPROVED'),
+    [snapshot.recoveryPlans, truckId],
+  );
 
   async function startJourney() {
     if (!truck) return;
@@ -221,6 +225,19 @@ export function Driver() {
     if (preset) {
       setLocation(preset.defaultLocation);
       setDescription(preset.defaultDescription);
+    }
+  }
+
+  async function acceptRecoveryOffer(planId: string) {
+    setActing(planId);
+    setError(null);
+    try {
+      await api.acceptRecoveryPlan(planId);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setActing(null);
     }
   }
 
@@ -252,9 +269,27 @@ export function Driver() {
     setBusy(true);
     setError(null);
     const chosen = EMERGENCY_REASONS.find((r) => r.id === selectedSosReason) ?? EMERGENCY_REASONS[0];
-    const loc = typeof truck.lat === 'number' && typeof truck.lng === 'number'
-      ? `GPS coordinates: ${truck.lat.toFixed(6)}, ${truck.lng.toFixed(6)}`
-      : location.trim() || 'Location unavailable (GPS fix not available)';
+    let loc = location.trim();
+    if ('geolocation' in navigator) {
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 });
+        });
+        loc = `GPS coordinates: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+      } catch {
+        // Never substitute old demo/last-known coordinates for an emergency's current location.
+        if (!loc) {
+          setError('Current GPS could not be obtained. Enter a nearby landmark or highway location before sending the emergency alert.');
+          setBusy(false);
+          return;
+        }
+      }
+    }
+    if (!loc) {
+      setError('Current GPS is unavailable. Enter a nearby landmark or highway location before sending the emergency alert.');
+      setBusy(false);
+      return;
+    }
 
     const reasonText = chosen ? `${chosen.label} - ${chosen.desc}` : 'Mechanical Breakdown';
 
@@ -580,6 +615,37 @@ export function Driver() {
               )}
             </Panel>
 
+            {session?.user.role === 'DRIVER' && recoveryOffers.length > 0 && (
+              <Panel eyebrow="Emergency Assistance" title="Replacement shipment request" bodyClassName="p-4">
+                <p className="mb-3 text-xs leading-relaxed text-ink-300">
+                  A vehicle on a compatible route has been selected to help recover a stranded shipment. Review the request and accept only if you can safely reach the handover point and carry the listed cargo.
+                </p>
+                <div className="space-y-3">
+                  {recoveryOffers.map((plan) => {
+                    const alreadyAccepted = plan.driverAcceptedBy === activeDriver?.id && Boolean(plan.driverAcceptedAt);
+                    const option = plan.options?.find((item) => item.truckId === plan.selectedTruckId);
+                    return (
+                      <article key={plan.id} className="rounded-lg border border-warn/40 bg-warn/[0.06] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs font-semibold text-ink-50">{plan.id}</span>
+                          <StatusPill status={alreadyAccepted ? 'ACCEPTED' : 'AWAITING DRIVER'} tone={alreadyAccepted ? 'healthy' : 'warn'} />
+                        </div>
+                        <div className="mt-2 text-xs text-ink-300">Shipment(s): <span className="font-mono text-ink-100">{(plan.affectedShipmentIds ?? []).join(', ')}</span></div>
+                        <div className="mt-1 text-xs text-ink-400">Your vehicle: {truck?.id ?? '—'} · Spare capacity: {formatT(truck?.availableT ?? 0)} · Estimated arrival: {option?.etaMinutes ?? '—'} min</div>
+                        {alreadyAccepted ? (
+                          <p className="mt-2 rounded border border-healthy/30 bg-healthy/10 px-2.5 py-2 text-xs text-healthy">You accepted this recovery request. Coordinate the cargo handover with the affected driver and Control Tower.</p>
+                        ) : (
+                          <button type="button" className="btn-primary mt-3 w-full" disabled={acting !== null} onClick={() => void acceptRecoveryOffer(plan.id)}>
+                            {acting === plan.id ? 'Accepting…' : 'Accept emergency shipment handover'}
+                          </button>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </Panel>
+            )}
+
             {/* Active Load Details */}
             <Panel eyebrow="Current Cargo" title="Assigned Shipment" bodyClassName="p-4">
               {cargo ? (
@@ -880,10 +946,14 @@ export function Driver() {
                 ))}
               </div>
 
-              <div className="mt-5 rounded-md border border-base-700 bg-base-950 p-3 font-mono text-[11px] text-ink-400">
-                <div>Vehicle: <strong className="text-ink-100">{truck?.id} ({truck?.registrationNo})</strong></div>
-                <div>Driver: <strong className="text-ink-100">{activeDriver?.name} ({activeDriver?.phone})</strong></div>
-                <div>Telemetry: <strong className="text-healthy">{truck?.lat?.toFixed(4)}, {truck?.lng?.toFixed(4)}</strong></div>
+              <label className="mt-4 block">
+                <span className="text-2xs font-bold uppercase tracking-wider text-ink-400">Current location / nearest landmark (GPS will be requested)</span>
+                <input className="field mt-1" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Hosur toll plaza / NH 48" />
+              </label>
+              <div className="mt-3 rounded-md border border-base-700 bg-base-950 p-3 text-[11px] text-ink-400">
+                Vehicle: <strong className="text-ink-100">{truck?.id} ({truck?.registrationNo})</strong><br />
+                Driver: <strong className="text-ink-100">{activeDriver?.name}</strong><br />
+                FleetGrid requests a fresh device GPS fix when you transmit SOS. It will not use an old demo coordinate as your emergency location.
               </div>
 
               <div className="mt-5 flex gap-3">
