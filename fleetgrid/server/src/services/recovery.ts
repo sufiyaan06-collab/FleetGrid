@@ -588,10 +588,8 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
         const moved = await setIncidentStatus(currentIncident, next, { planId: plan.id });
         await setIncidentStatus(moved, 'PLAN_READY', { planId: plan.id });
       }
-      const ready = await db.incidents.findById(incident.id);
-      if (ready && ready.status === 'PLAN_READY') {
-        await setIncidentStatus(ready, 'RESOLVED', { planId: plan.id, resolvedBy: plan.approvedBy });
-      }
+      // Keep the incident in PLAN_READY after cargo recovery: the shipment is safe,
+      // but the original vehicle remains disabled until an operator confirms repair.
     }
 
     const notificationIds: string[] = [];
