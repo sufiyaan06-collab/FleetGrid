@@ -7,6 +7,7 @@ import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
 import { requireRoles } from '../middleware/auth.js';
 import { db } from '../store/db.js';
+import { hub } from '../services/realtime.js';
 import { ApiError } from '../lib/errors.js';
 import type { User } from '../types.js';
 
@@ -60,6 +61,35 @@ incidentsRouter.post(
       source: user.role === 'DRIVER' ? 'DRIVER_APP' : body.source,
       actorId: process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? body.actorId ?? null : user.id,
     });
+    // Notify the operations desk and affected shippers in-app as soon as the incident
+    // is persisted. This is an internal alert, not an external roadside dispatch.
+    const operationsUsers = await db.users.find((member) => ['CONTROL_TOWER', 'OPERATOR'].includes(member.role));
+    for (const member of operationsUsers) {
+      const notice = await db.notifications.create({
+        id: `ntf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+        recipientId: member.id,
+        type: 'EMERGENCY_INCIDENT',
+        message: `Emergency ${body.type.replace(/_/g, ' ').toLowerCase()} reported for ${body.truckId} at ${result.incident.location}. Severity: ${result.incident.severity ?? 'unknown'}. Immediate review required.`,
+        status: 'PENDING',
+        createdAt: new Date().toISOString(),
+      });
+      hub.broadcast('notification.created', notice);
+    }
+    for (const shipment of result.affectedShipments) {
+      const shipperUsers = await db.users.find((member) => member.organizationId === shipment.shipperId && member.role === 'BUSINESS');
+      for (const member of shipperUsers) {
+        const notice = await db.notifications.create({
+          id: `ntf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          recipientId: member.id,
+          type: 'SHIPMENT_AT_RISK',
+          message: `Shipment ${shipment.id} is at risk after a vehicle incident near ${result.incident.location}. FleetGrid is coordinating assistance and recovery options.`,
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+        });
+        hub.broadcast('notification.created', notice);
+      }
+    }
+
     // Breakdown and accident alerts immediately prepare a recovery proposal for the
     // Control Tower. The proposal is NOT executed automatically: operator approval
     // and replacement-driver acceptance are still mandatory before cargo can move.
