@@ -62,7 +62,11 @@ miscRouter.get(
         : snapshot.capacityOffers.filter((offer) => ownTruckIds.has(offer.truckId)),
       shipments: ownShipments,
       incidents: ownIncidents,
-      recoveryPlans: snapshot.recoveryPlans.filter((plan) => ownIncidentIds.has(plan.incidentId)),
+      recoveryPlans: snapshot.recoveryPlans.filter((plan) =>
+        ownIncidentIds.has(plan.incidentId) ||
+        Boolean(plan.selectedTruckId && ownTruckIds.has(plan.selectedTruckId)) ||
+        Boolean(plan.affectedShipmentIds?.some((shipmentId) => ownShipmentIds.has(shipmentId))),
+      ),
       payments: snapshot.payments.filter((payment) => Boolean(payment.shipmentId && ownShipmentIds.has(payment.shipmentId))),
       events: snapshot.events.filter((event) =>
         Boolean((event.shipmentId && ownShipmentIds.has(event.shipmentId)) || (event.truckId && visibleTruckIds.has(event.truckId))),
