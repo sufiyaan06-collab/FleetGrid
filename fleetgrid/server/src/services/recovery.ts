@@ -378,10 +378,10 @@ export async function acceptRecoveryPlan(planId: string, userId: string): Promis
     }
     if (!plan.selectedTruckId) throw ApiError.conflict('No replacement vehicle has been selected for this recovery request.');
     const driver = (await db.drivers.find((item) => item.userId === userId))[0];
-    if (!driver || driver.assignedTruckId === null) throw ApiError.forbidden('No assigned driver vehicle is linked to this account.');
+    if (!driver || driver.assignedTruckId === null) throw new ApiError(403, 'FORBIDDEN', 'No assigned driver vehicle is linked to this account.');
     const truck = await db.trucks.findById(plan.selectedTruckId);
     if (!truck || truck.driverId !== driver.id || driver.assignedTruckId !== truck.id) {
-      throw ApiError.forbidden('This recovery request is assigned to a different driver and vehicle.');
+      throw new ApiError(403, 'FORBIDDEN', 'This recovery request is assigned to a different driver and vehicle.');
     }
     if (plan.driverAcceptedAt && plan.driverAcceptedBy === driver.id) return plan;
     if (plan.driverAcceptedAt) throw ApiError.conflict('Another driver has already accepted this recovery request.');
