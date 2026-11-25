@@ -183,7 +183,6 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
       }
       if (offer.status === 'CLOSED') blockers.push('capacity offer closed');
 
-      const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
       const facts = [
         `${round(truck.availableT)}T spare`,
         `${leg.distanceKm} km away`,
