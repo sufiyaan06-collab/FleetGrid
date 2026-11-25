@@ -80,6 +80,20 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
     }
   }
 
+  async function confirmRepair() {
+    if (!anchor) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.confirmVehicleRepair(anchor.id);
+      onAction();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function execute() {
     if (!planForIncident) return;
     setBusy(true);
@@ -143,7 +157,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
                   resolved ? 'text-healthy' : 'text-danger',
                 )}
               >
-                {resolved ? 'Incident Resolved' : 'Incident Detected'}
+                {resolved ? 'Incident Resolved' : planForIncident?.status === 'COMPLETED' ? 'Shipment recovered · vehicle repair pending' : 'Incident Detected'}
               </span>
             </div>
             <div className="mt-2 font-mono text-lg font-semibold tracking-tight text-ink-50">{anchor.truckId}</div>
@@ -340,6 +354,15 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
               </div>
             )}
           </div>
+
+          {planForIncident.status === 'COMPLETED' && anchor.status !== 'RESOLVED' && (
+            <div className="mt-3 rounded-lg border border-warn/35 bg-warn/[0.05] p-3">
+              <p className="text-[11px] leading-relaxed text-ink-300">The shipment has been transferred, but the original truck remains out of service. Only confirm this after a mechanic or authorized operator verifies that the vehicle is safe to drive.</p>
+              <button type="button" className="btn-primary mt-2 w-full" onClick={confirmRepair} disabled={busy}>
+                {busy ? 'Recording repair…' : 'Confirm vehicle repaired & return to service'}
+              </button>
+            </div>
+          )}
 
           <div className="mt-2.5">
             <Placeholder>
