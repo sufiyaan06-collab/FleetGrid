@@ -1,4 +1,5 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { connect as tlsConnect } from 'node:tls';
 import { promisify } from 'node:util';
 import { ApiError } from '../lib/errors.js';
 import { isProductionEnvironment } from '../config.js';
@@ -63,14 +64,111 @@ export function clearSessionCookie(res: { setHeader(name: string, value: string)
   res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}; Max-Age=0${secure}`);
 }
 
-export async function sendPasswordResetEmail(email: string, token: string): Promise<void> {
-  assertEmailProviderConfigured();
+
+type MailMessage = { from: string; to: string; subject: string; text: string };
+
+function smtpConfigured(): boolean {
+  return Boolean(process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim());
+}
+
+async function sendWithGmailSmtp(message: MailMessage): Promise<void> {
+  const host = process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
+  const port = Number(process.env.SMTP_PORT || 465);
+  const username = process.env.SMTP_USER?.trim();
+  const password = process.env.SMTP_PASS?.replace(/\\s/g, '');
+  if (!username || !password || host !== 'smtp.gmail.com' || port !== 465) {
+    throw new ApiError(503, 'EMAIL_PROVIDER_NOT_CONFIGURED', 'Gmail SMTP requires smtp.gmail.com on port 465 with SMTP_USER and SMTP_PASS.');
+  }
+
+  const socket = tlsConnect({ host, port, servername: host });
+  socket.setEncoding('utf8');
+  let incoming = '';
+  let responseLines: string[] = [];
+  const responses: string[] = [];
+  const waiters: Array<(value: string) => void> = [];
+  socket.on('data', (chunk: string) => {
+    incoming += chunk;
+    const lines = incoming.split('\\r\\n');
+    incoming = lines.pop() ?? '';
+    for (const line of lines) {
+      responseLines.push(line);
+      if (/^\\d{3} /.test(line)) {
+        const response = responseLines.join('\\n');
+        responseLines = [];
+        const waiter = waiters.shift();
+        if (waiter) waiter(response); else responses.push(response);
+      }
+    }
+  });
+  const readResponse = () => new Promise<string>((resolve, reject) => {
+    if (responses.length) return resolve(responses.shift()!);
+    const timer = setTimeout(() => reject(new Error('SMTP timeout')), 15000);
+    waiters.push((value) => { clearTimeout(timer); resolve(value); });
+    socket.once('error', reject);
+  });
+  const command = async (value: string, expected: number) => {
+    socket.write(value + '\\r\\n');
+    const response = await readResponse();
+    if (!response.startsWith(String(expected))) throw new Error('SMTP command rejected');
+  };
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once('secureConnect', resolve);
+      socket.once('error', reject);
+    });
+    if (!(await readResponse()).startsWith('220')) throw new Error('SMTP greeting rejected');
+    await command('EHLO fleetgrid', 250);
+    await command('AUTH LOGIN', 334);
+    await command(Buffer.from(username).toString('base64'), 334);
+    await command(Buffer.from(password).toString('base64'), 235);
+    const sender = message.from.replace(/^.*<([^>]+)>.*$/, '$1').trim();
+    await command(`MAIL FROM:<${sender}>`, 250);
+    await command(`RCPT TO:<${message.to}>`, 250);
+    await command('DATA', 354);
+    const clean = (value: string) => value.replace(/[\\r\\n]+/g, ' ').trim();
+    const body = [
+      `From: FleetGrid <${sender}>`,
+      `To: <${message.to}>`,
+      `Subject: ${clean(message.subject)}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: 8bit',
+      '',
+      message.text.replace(/\\r?\\n/g, '\\r\\n').replace(/^\\./gm, '..'),
+    ].join('\\r\\n');
+    socket.write(body + '\\r\\n.\\r\\n');
+    if (!(await readResponse()).startsWith('250')) throw new Error('SMTP message rejected');
+    socket.write('QUIT\\r\\n');
+  } catch {
+    throw new ApiError(502, 'EMAIL_DELIVERY_FAILED', 'Gmail could not send this email. Check the Gmail app password and SMTP settings in Render.');
+  } finally {
+    socket.end();
+  }
+}
+
+async function sendEmail(message: MailMessage): Promise<void> {
+  if (smtpConfigured()) {
+    await sendWithGmailSmtp(message);
+    return;
+  }
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
-  const baseUrl = process.env.APP_BASE_URL;
-  if (!apiKey || !from || !baseUrl) {
-    throw new ApiError(503, 'EMAIL_PROVIDER_NOT_CONFIGURED', 'Password reset email is not available yet. Configure the email provider first.');
+  if (!apiKey || !from) {
+    throw new ApiError(503, 'EMAIL_PROVIDER_NOT_CONFIGURED', 'Configure Gmail SMTP or a verified email provider, plus APP_BASE_URL.');
   }
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to: [message.to], subject: message.subject, text: message.text }),
+  });
+  if (!response.ok) throw new ApiError(502, 'EMAIL_DELIVERY_FAILED', 'FleetGrid could not send the email. Check the configured email provider.');
+}
+
+export async function sendPasswordResetEmail(email: string, token: string): Promise<void> {
+  assertEmailProviderConfigured();
+  const baseUrl = process.env.APP_BASE_URL;
+  if (!baseUrl) throw new ApiError(503, 'EMAIL_PROVIDER_NOT_CONFIGURED', 'APP_BASE_URL is required.');
   let url: URL;
   try {
     url = new URL('/', baseUrl);
@@ -78,23 +176,12 @@ export async function sendPasswordResetEmail(email: string, token: string): Prom
   } catch {
     throw new ApiError(503, 'EMAIL_CONFIGURATION_INVALID', 'APP_BASE_URL must be a valid absolute URL.');
   }
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from,
-      to: [email],
-      subject: 'Reset your FleetGrid password',
-      text: [
-        `Reset your FleetGrid password by opening this link: ${url.toString()}`,
-        '',
-        'This link expires in 1 hour. If you did not request this, ignore this email.',
-      ].join(String.fromCharCode(10)),
-    }),
+  await sendEmail({
+    from: process.env.EMAIL_FROM?.trim() || process.env.SMTP_USER!.trim(),
+    to: email,
+    subject: 'Reset your FleetGrid password',
+    text: [`Reset your FleetGrid password by opening this link: ${url.toString()}`, '', 'This link expires in 1 hour. If you did not request this, ignore this email.'].join('\\n'),
   });
-  if (!response.ok) {
-    throw new ApiError(502, 'EMAIL_DELIVERY_FAILED', 'FleetGrid could not send the password reset email. Please try again later.');
-  }
 }
 
 export function readSessionCookie(cookieHeader?: string): string | null {
@@ -111,28 +198,17 @@ export function readSessionCookie(cookieHeader?: string): string | null {
 }
 
 export function assertEmailProviderConfigured(): void {
-  if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM || !process.env.APP_BASE_URL) {
-    throw new ApiError(
-      503,
-      'EMAIL_PROVIDER_NOT_CONFIGURED',
-      'Email verification is not available yet. Configure RESEND_API_KEY, EMAIL_FROM, and APP_BASE_URL before enabling real account registration.',
-    );
+  const hasSmtp = smtpConfigured();
+  const hasResend = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim());
+  if ((!hasSmtp && !hasResend) || !process.env.APP_BASE_URL?.trim()) {
+    throw new ApiError(503, 'EMAIL_PROVIDER_NOT_CONFIGURED', 'Set SMTP_USER and SMTP_PASS for Gmail SMTP, or configure a verified email provider, plus APP_BASE_URL.');
   }
 }
 
 export async function sendVerificationEmail(email: string, token: string): Promise<void> {
   assertEmailProviderConfigured();
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
   const baseUrl = process.env.APP_BASE_URL;
-  if (!apiKey || !from || !baseUrl) {
-    throw new ApiError(
-      503,
-      'EMAIL_PROVIDER_NOT_CONFIGURED',
-      'Email verification is not available yet. Configure RESEND_API_KEY, EMAIL_FROM, and APP_BASE_URL before enabling real account registration.',
-    );
-  }
-
+  if (!baseUrl) throw new ApiError(503, 'EMAIL_PROVIDER_NOT_CONFIGURED', 'APP_BASE_URL is required.');
   let url: URL;
   try {
     url = new URL('/', baseUrl);
@@ -140,23 +216,10 @@ export async function sendVerificationEmail(email: string, token: string): Promi
   } catch {
     throw new ApiError(503, 'EMAIL_CONFIGURATION_INVALID', 'APP_BASE_URL must be a valid absolute URL.');
   }
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to: [email],
-      subject: 'Verify your FleetGrid email',
-      text: `Verify your FleetGrid account by opening this link: ${url.toString()}\n\nThis link expires in 24 hours. If you did not create this account, ignore this email.`,
-    }),
+  await sendEmail({
+    from: process.env.EMAIL_FROM?.trim() || process.env.SMTP_USER!.trim(),
+    to: email,
+    subject: 'Verify your FleetGrid email',
+    text: `Verify your FleetGrid account by opening this link: ${url.toString()}\\n\\nThis link expires in 24 hours. If you did not create this account, ignore this email.`,
   });
-
-  if (!response.ok) {
-    // Do not include provider response bodies, credentials, or verification tokens in logs/errors.
-    throw new ApiError(502, 'EMAIL_DELIVERY_FAILED', 'FleetGrid could not send the verification email. Please try again later.');
-  }
 }
