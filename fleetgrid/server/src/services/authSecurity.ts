@@ -92,7 +92,7 @@ async function sendWithGmailSmtp(message: MailMessage): Promise<void> {
     incoming = lines.pop() ?? '';
     for (const line of lines) {
       responseLines.push(line);
-      if (/^\\d{3} /.test(line)) {
+      if (/^\d{3} /.test(line)) {
         const response = responseLines.join('\n');
         responseLines = [];
         const waiter = waiters.shift();
@@ -135,7 +135,7 @@ async function sendWithGmailSmtp(message: MailMessage): Promise<void> {
       'Content-Type: text/plain; charset=UTF-8',
       'Content-Transfer-Encoding: 8bit',
       '',
-      message.text.replace(/\r?\n/g, '\r\n').replace(/^\\./gm, '..'),
+      message.text.replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..'),
     ].join('\r\n');
     socket.write(body + '\r\n.\r\n');
     if (!(await readResponse()).startsWith('250')) throw new Error('SMTP message rejected');
