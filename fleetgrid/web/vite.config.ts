@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
-  const backend = env.VITE_BACKEND_ORIGIN ?? 'http://localhost:4000';
+  const backend = env.VITE_BACKEND_ORIGIN ?? '';
 
   return {
     plugins: [react()],
@@ -23,8 +23,8 @@ export default defineConfig(({ mode }) => {
       sourcemap: false,
     },
     define: {
-      // Lets the client talk to the backend on the same origin in dev/prod when
-      // VITE_API_URL is not set (Vite proxies /api and /ws to the backend).
+      // Prefer an explicitly configured API origin; otherwise let the client
+      // resolve the deployed site's own origin (localhost:4000 is dev-only).
       __FLEETGRID_BACKEND__: JSON.stringify(env.VITE_API_URL ?? backend),
     },
   };

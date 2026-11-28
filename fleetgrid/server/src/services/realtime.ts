@@ -3,12 +3,15 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { config } from '../config.js';
 import { nowIso } from '../lib/ids.js';
-import type { RealtimeEventType, RealtimeMessage } from '../types.js';
+import type { RealtimeEventType, RealtimeMessage, User } from '../types.js';
+import { db } from '../store/db.js';
+import { hashOpaqueToken, readSessionCookie } from './authSecurity.js';
 
 interface TrackedClient {
   socket: WebSocket;
   alive: boolean;
   clientId: string;
+  user: User;
 }
 
 const REALTIME_PATH = '/realtime';
@@ -24,6 +27,7 @@ const REALTIME_PATH = '/realtime';
 class RealtimeHub {
   private wss: WebSocketServer | null = null;
   private clients = new Map<WebSocket, TrackedClient>();
+  private authenticatedUsers = new WeakMap<WebSocket, User>();
   private heartbeat: NodeJS.Timeout | null = null;
   private counter = 0;
 
@@ -31,20 +35,57 @@ class RealtimeHub {
     this.wss = new WebSocketServer({ noServer: true });
 
     server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-      const { pathname } = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-      if (pathname !== REALTIME_PATH) {
-        socket.destroy();
-        return;
-      }
-      this.wss?.handleUpgrade(req, socket, head, (ws) => {
-        this.wss?.emit('connection', ws, req);
-      });
+      void (async () => {
+        const { pathname } = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+        if (pathname !== REALTIME_PATH) {
+          socket.destroy();
+          return;
+        }
+
+        const origin = req.headers.origin;
+        if (process.env.NODE_ENV === 'production' && origin && !config.corsOrigins.includes(origin)) {
+          socket.write('HTTP/1.1 403 Forbidden\\r\\n\\r\\n');
+          socket.destroy();
+          return;
+        }
+
+        let user: User | undefined;
+        if (process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true') {
+          user = (await db.users.get())[0];
+        } else {
+          const token = readSessionCookie(req.headers.cookie);
+          if (token) {
+            const tokenHash = hashOpaqueToken(token);
+            const matches = await db.authAccounts.find((account) => account.sessionTokenHash === tokenHash);
+            const account = matches[0];
+            if (account?.sessionExpiresAt && Date.parse(account.sessionExpiresAt) > Date.now() && account.emailVerifiedAt) {
+              user = await db.users.findById(account.id);
+            }
+          }
+        }
+
+        if (!user) {
+          socket.write('HTTP/1.1 401 Unauthorized\\r\\n\\r\\n');
+          socket.destroy();
+          return;
+        }
+
+        this.wss?.handleUpgrade(req, socket, head, (ws) => {
+          this.authenticatedUsers.set(ws, user!);
+          this.wss?.emit('connection', ws, req);
+        });
+      })().catch(() => socket.destroy());
     });
 
     this.wss.on('connection', (socket: WebSocket) => {
+      const user = this.authenticatedUsers.get(socket);
+      if (!user) {
+        socket.close(1008, 'Authentication required');
+        return;
+      }
       this.counter += 1;
       const clientId = `client-${this.counter}`;
-      this.clients.set(socket, { socket, alive: true, clientId });
+      this.clients.set(socket, { socket, alive: true, clientId, user });
 
       socket.on('pong', () => {
         const tracked = this.clients.get(socket);
@@ -102,7 +143,8 @@ class RealtimeHub {
     const serialised = JSON.stringify(message);
     for (const [socket, tracked] of this.clients) {
       if (socket.readyState === socket.OPEN) {
-        socket.send(serialised);
+        const privileged = ['CONTROL_TOWER', 'OPERATOR', 'VERIFIER'].includes(tracked.user.role);
+        socket.send(privileged ? serialised : JSON.stringify({ type, payload: { refresh: true }, ts: message.ts }));
         tracked.alive = true;
       }
     }

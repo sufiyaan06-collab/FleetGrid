@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../lib/api';
 import { flashClassFor } from '../lib/flash';
 import { useFleet } from '../store/FleetContext';
@@ -14,35 +14,29 @@ const INCIDENT_TYPES: Array<{ value: IncidentType; label: string; defaultLocatio
   {
     value: 'TRUCK_BREAKDOWN',
     label: 'Truck Breakdown',
-    defaultLocation: 'Hosur (NH-48 km 42)',
+    defaultLocation: '',
     defaultDescription: 'Engine failure / truck unable to continue',
   },
-  { value: 'ACCIDENT', label: 'Accident', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Highway collision / road hazard' },
-  { value: 'DELAY', label: 'Delay', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Traffic bottleneck / running behind schedule' },
-  { value: 'ROUTE_BLOCKED', label: 'Route Blocked', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Road closure / detour required' },
-  { value: 'CARGO_DAMAGE', label: 'Cargo Damage', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Cargo seal damaged or shifted' },
-  { value: 'OTHER', label: 'Other', defaultLocation: 'Hosur (NH-48 km 42)', defaultDescription: 'Other road emergency' },
+  { value: 'ACCIDENT', label: 'Accident', defaultLocation: '', defaultDescription: 'Highway collision / road hazard' },
+  { value: 'DELAY', label: 'Delay', defaultLocation: '', defaultDescription: 'Traffic bottleneck / running behind schedule' },
+  { value: 'ROUTE_BLOCKED', label: 'Route Blocked', defaultLocation: '', defaultDescription: 'Road closure / detour required' },
+  { value: 'CARGO_DAMAGE', label: 'Cargo Damage', defaultLocation: '', defaultDescription: 'Cargo seal damaged or shifted' },
+  { value: 'OTHER', label: 'Other', defaultLocation: '', defaultDescription: 'Other road emergency' },
 ];
 
 const EMERGENCY_REASONS = [
-  { id: 'engine_fire', label: '🔥 Engine Failure / Smoke', desc: 'Critical mechanical breakdown; vehicle immobilized on highway shoulder' },
-  { id: 'accident', label: '💥 Highway Collision / Accident', desc: 'Involved in collision; medical & tow support requested' },
-  { id: 'hijack_hazard', label: '🚨 Road Blockade / Cargo Threat', desc: 'Hostile obstruction or unauthorized vehicle stoppage' },
-  { id: 'medical', label: '🏥 Driver Medical Emergency', desc: 'Sudden illness or fatigue; immediate relief driver required' },
+  { id: 'engine_fire', label: '🔥 Engine Failure / Smoke', desc: 'Critical engine breakdown; vehicle immobilized' },
+  { id: 'tyre', label: '🛞 Tyre Puncture / Burst', desc: 'Tyre failure; vehicle cannot safely continue' },
+  { id: 'overheating', label: '🌡️ Engine Overheating', desc: 'Engine temperature critical; vehicle stopped safely' },
+  { id: 'brakes', label: '🛑 Brake / Steering Failure', desc: 'Vehicle control issue; immediate safety assistance required' },
+  { id: 'fuel_battery', label: '⛽ Fuel / Battery Failure', desc: 'Vehicle immobilized due to fuel or electrical failure' },
+  { id: 'accident', label: '💥 Highway Collision / Accident', desc: 'Collision or road accident; medical and towing support requested' },
+  { id: 'hijack_hazard', label: '🚨 Road Blockade / Cargo Threat', desc: 'Road obstruction or cargo security threat' },
+  { id: 'cargo', label: '📦 Cargo Damage / Load Shift', desc: 'Cargo damaged, shifted or unsafe to transport' },
+  { id: 'medical', label: '🏥 Driver Medical Emergency', desc: 'Sudden illness or fatigue; immediate assistance required' },
+  { id: 'other', label: '❔ Other Emergency', desc: 'Another urgent transportation problem; see driver details' },
 ];
 
-// Seeded roster stats for enriched driver experience
-const DRIVER_METRICS: Record<string, { safetyScore: number; completedHauls: number; license: string }> = {
-  drv_ravi_kumar: { safetyScore: 99.4, completedHauls: 184, license: 'DL-04-2018-992144' },
-  drv_imran_sheikh: { safetyScore: 98.8, completedHauls: 156, license: 'DL-09-2019-441029' },
-  drv_suresh_naidu: { safetyScore: 97.9, completedHauls: 142, license: 'DL-03-2020-881240' },
-  drv_anita_fernandes: { safetyScore: 99.8, completedHauls: 210, license: 'DL-04-2017-331902' },
-  drv_vikram_reddy: { safetyScore: 98.2, completedHauls: 129, license: 'DL-21-2021-771804' },
-  drv_meena_subramanian: { safetyScore: 99.1, completedHauls: 167, license: 'DL-22-2019-552199' },
-  drv_harish_gowda: { safetyScore: 96.5, completedHauls: 98, license: 'DL-51-2022-114402' },
-  drv_divya_pillai: { safetyScore: 99.6, completedHauls: 175, license: 'DL-07-2018-662391' },
-  drv_ganesh_murthy: { safetyScore: 98.5, completedHauls: 133, license: 'DL-10-2020-994411' },
-};
 
 export function Driver() {
   const { snapshot, session, refresh, connection, flashIds, flashTone, setMode } = useFleet();
@@ -50,28 +44,24 @@ export function Driver() {
   // Active View Tab: 'CAB' (individual driver cabin) or 'ROSTER' (fleet drivers directory)
   const [activeTab, setActiveTab] = useState<'CAB' | 'ROSTER'>('CAB');
 
-  // Selected driver ID (defaults to logged-in driver or Ravi Kumar FG-027)
-  const [selectedDriverId, setSelectedDriverId] = useState<string>(
-    session?.driver?.id ?? 'drv_ravi_kumar',
-  );
+  // Drivers stay scoped to their authenticated profile; Operations may select a roster entry.
+  const [selectedDriverId, setSelectedDriverId] = useState<string>(session?.driver?.id ?? '');
 
   const activeDriver: DriverType | null = useMemo(() => {
-    return (
-      snapshot.drivers.find((d) => d.id === selectedDriverId) ??
-      snapshot.drivers.find((d) => d.id === (session?.driver?.id ?? 'drv_ravi_kumar')) ??
-      snapshot.drivers[0] ??
-      null
-    );
-  }, [snapshot.drivers, selectedDriverId, session?.driver?.id]);
+    if (session?.user.role === 'DRIVER') {
+      return session.driver ?? snapshot.drivers.find((d) => d.userId === session.user.id) ?? null;
+    }
+    return snapshot.drivers.find((d) => d.id === selectedDriverId) ?? snapshot.drivers[0] ?? null;
+  }, [snapshot.drivers, selectedDriverId, session?.driver, session?.user.id, session?.user.role]);
 
-  const truckId = activeDriver?.assignedTruckId ?? session?.driver?.assignedTruckId ?? 'FG-027';
-  const truck = snapshot.trucks.find((t) => t.id === truckId) ?? null;
+  const truckId = activeDriver?.assignedTruckId ?? null;
+  const truck = truckId ? snapshot.trucks.find((t) => t.id === truckId) ?? null : null;
 
   const assigned = useMemo(
     () =>
       snapshot.shipments
-        .filter((s) => s.truckId === truckId && s.status !== 'DELIVERED')
-        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+        .filter((s) => Boolean(truckId) && s.truckId === truckId && s.status !== 'DELIVERED')
+        .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '')),
     [snapshot.shipments, truckId],
   );
   const cargo = assigned[0] ?? null;
@@ -80,7 +70,7 @@ export function Driver() {
     () =>
       snapshot.incidents
         .filter((i) => i.truckId === truckId)
-        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+        .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '')),
     [snapshot.incidents, truckId],
   );
 
@@ -90,9 +80,13 @@ export function Driver() {
   const [sosModalOpen, setSosModalOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [selectedSosReason, setSelectedSosReason] = useState(EMERGENCY_REASONS[0]?.id ?? 'engine_fire');
+  const [emergencyDetails, setEmergencyDetails] = useState('');
+  const [gpsSharing, setGpsSharing] = useState(false);
+  const [gpsMessage, setGpsMessage] = useState('Location sharing is off.');
+  const lastGpsSentAt = useRef(0);
 
   const [incidentType, setIncidentType] = useState<IncidentType>('TRUCK_BREAKDOWN');
-  const [location, setLocation] = useState('Hosur (NH-48 km 42)');
+  const [location, setLocation] = useState('');
   const [description, setDescription] = useState('Engine failure / truck unable to continue');
 
   // Offers queue from server
@@ -123,6 +117,57 @@ export function Driver() {
       cancelled = true;
     };
   }, [driverId, snapshot]);
+
+  useEffect(() => {
+    if (!gpsSharing || session?.user.role !== 'DRIVER') return;
+    if (!truckId) {
+      setGpsMessage('No truck is assigned to your driver account yet.');
+      setGpsSharing(false);
+      return;
+    }
+    if (!('geolocation' in navigator)) {
+      setGpsMessage('This device or browser does not support GPS location.');
+      setGpsSharing(false);
+      return;
+    }
+
+    let active = true;
+    setGpsMessage('Waiting for your device GPS location…');
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (!active) return;
+        const now = Date.now();
+        if (now - lastGpsSentAt.current < 5000) return;
+        lastGpsSentAt.current = now;
+        const coords = position.coords;
+        void api.updateTruckLocation(truckId, {
+          lat: coords.latitude,
+          lng: coords.longitude,
+          ...(coords.speed != null && Number.isFinite(coords.speed) ? { speedKmph: Math.max(0, coords.speed * 3.6) } : {}),
+          ...(coords.heading != null && Number.isFinite(coords.heading) ? { heading: coords.heading } : {}),
+        }).then(() => {
+          if (active) setGpsMessage(`Sharing your location · accuracy ±${Math.round(coords.accuracy)} m`);
+        }).catch((err: Error) => {
+          if (active) setGpsMessage(`Location update failed: ${err.message}`);
+        });
+      },
+      (err) => {
+        if (!active) return;
+        setGpsMessage(err.code === err.PERMISSION_DENIED
+          ? 'Location permission was denied. Allow location access in your browser settings to share GPS.'
+          : err.code === err.POSITION_UNAVAILABLE
+            ? 'Your device GPS location is currently unavailable.'
+            : 'GPS request timed out. Keep location services enabled and try again.');
+        setGpsSharing(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
+    );
+
+    return () => {
+      active = false;
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [gpsSharing, session?.user.role, truckId]);
 
   const pending = queue?.pending ?? [];
   const accepted = queue?.accepted ?? [];
@@ -161,7 +206,11 @@ export function Driver() {
     pending.length === 0;
 
   const inTransit = truck?.status === 'IN_TRANSIT';
-  const isSosIncident = truck?.status === 'INCIDENT' || myIncidents.some((i) => i.status === 'OPEN' || i.status === 'ANALYZING');
+  const isSosIncident = truck?.status === 'INCIDENT' || myIncidents.some((i) => ['OPEN', 'ANALYZING', 'PLAN_READY', 'ESCALATED'].includes(i.status));
+  const recoveryOffers = useMemo(
+    () => snapshot.recoveryPlans.filter((plan) => plan.selectedTruckId === truckId && plan.status === 'APPROVED'),
+    [snapshot.recoveryPlans, truckId],
+  );
 
   async function startJourney() {
     if (!truck) return;
@@ -183,6 +232,19 @@ export function Driver() {
     if (preset) {
       setLocation(preset.defaultLocation);
       setDescription(preset.defaultDescription);
+    }
+  }
+
+  async function acceptRecoveryOffer(planId: string) {
+    setActing(planId);
+    setError(null);
+    try {
+      await api.acceptRecoveryPlan(planId);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setActing(null);
     }
   }
 
@@ -214,22 +276,41 @@ export function Driver() {
     setBusy(true);
     setError(null);
     const chosen = EMERGENCY_REASONS.find((r) => r.id === selectedSosReason) ?? EMERGENCY_REASONS[0];
-    const loc = truck.lat && truck.lng
-      ? `NH-48 Corridor (GPS: ${truck.lat.toFixed(4)}, ${truck.lng.toFixed(4)}) near Hosur`
-      : 'NH-48 Corridor near Hosur km 42';
+    let loc = location.trim();
+    if ('geolocation' in navigator) {
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 });
+        });
+        loc = `GPS coordinates: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+      } catch {
+        // Never substitute old demo/last-known coordinates for an emergency's current location.
+        if (!loc) {
+          setError('Current GPS could not be obtained. Enter a nearby landmark or highway location before sending the emergency alert.');
+          setBusy(false);
+          return;
+        }
+      }
+    }
+    if (!loc) {
+      setError('Current GPS is unavailable. Enter a nearby landmark or highway location before sending the emergency alert.');
+      setBusy(false);
+      return;
+    }
 
     const reasonText = chosen ? `${chosen.label} - ${chosen.desc}` : 'Mechanical Breakdown';
 
     try {
       await api.createIncident({
         truckId: truck.id,
-        type: 'TRUCK_BREAKDOWN',
+        type: chosen?.id === 'accident' ? 'ACCIDENT' : chosen?.id === 'cargo' ? 'CARGO_DAMAGE' : chosen?.id === 'hijack_hazard' ? 'ROUTE_BLOCKED' : chosen?.id === 'medical' || chosen?.id === 'other' ? 'OTHER' : 'TRUCK_BREAKDOWN',
         location: loc,
         severity: 'CRITICAL',
-        description: `🚨 CRITICAL EMERGENCY SOS: Driver ${activeDriver?.name ?? 'Driver'} triggered panic beacon. ${reasonText}. Vehicle immobilized on highway. AI Corridor Reroute & Emergency Recovery requested immediately.`,
+        description: `🚨 CRITICAL EMERGENCY SOS: Driver ${activeDriver?.name ?? 'Driver'} triggered panic beacon. ${reasonText}. ${emergencyDetails.trim() ? `Driver details: ${emergencyDetails.trim()}. ` : ''}Vehicle stopped on route. Control Tower response requested.`,
         ...(driverId ? { actorId: driverId } : {}),
       });
       setSosModalOpen(false);
+      setEmergencyDetails('');
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : (err as Error).message);
@@ -258,34 +339,38 @@ export function Driver() {
               <span>🚚</span>
               <span>Cab Cockpit</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('ROSTER')}
-              className={cn(
-                'flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer',
-                activeTab === 'ROSTER' ? 'bg-healthy text-base-950 shadow-sm' : 'text-ink-400 hover:text-ink-100',
-              )}
-            >
-              <span>👥</span>
-              <span>Fleet Drivers ({snapshot.drivers.length})</span>
-            </button>
+            {session?.user.role !== 'DRIVER' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('ROSTER')}
+                className={cn(
+                  'flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer',
+                  activeTab === 'ROSTER' ? 'bg-healthy text-base-950 shadow-sm' : 'text-ink-400 hover:text-ink-100',
+                )}
+              >
+                <span>👥</span>
+                <span>Fleet Drivers ({snapshot.drivers.length})</span>
+              </button>
+            )}
           </div>
 
-          {/* Quick Driver Switcher */}
-          <div className="flex items-center gap-2">
-            <span className="text-2xs font-semibold uppercase tracking-wider text-ink-400">Active Driver:</span>
-            <select
-              value={selectedDriverId}
-              onChange={(e) => setSelectedDriverId(e.target.value)}
-              className="rounded-md border border-base-600 bg-base-800 px-3 py-1.5 font-mono text-xs font-medium text-ink-100 focus:border-healthy focus:outline-none cursor-pointer"
-            >
-              {snapshot.drivers.map((drv) => (
-                <option key={drv.id} value={drv.id} className="bg-base-900 text-ink-100">
-                  {drv.name} ({drv.assignedTruckId ?? 'No Truck'})
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Operations can inspect the roster; a driver only sees their own cab. */}
+          {session?.user.role !== 'DRIVER' && (
+            <div className="flex items-center gap-2">
+              <span className="text-2xs font-semibold uppercase tracking-wider text-ink-400">Active Driver:</span>
+              <select
+                value={selectedDriverId}
+                onChange={(e) => setSelectedDriverId(e.target.value)}
+                className="rounded-md border border-base-600 bg-base-800 px-3 py-1.5 font-mono text-xs font-medium text-ink-100 focus:border-healthy focus:outline-none cursor-pointer"
+              >
+                {snapshot.drivers.map((drv) => (
+                  <option key={drv.id} value={drv.id} className="bg-base-900 text-ink-100">
+                    {drv.name} ({drv.assignedTruckId ?? 'No Truck'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* ======================================================== */}
@@ -305,7 +390,7 @@ export function Driver() {
                     {activeDriver?.name ?? 'Driver'}
                   </h1>
                   <div className="font-mono text-[11px] text-ink-400">
-                    {activeDriver?.phone} &bull; {DRIVER_METRICS[activeDriver?.id ?? '']?.license ?? 'DL-Commercial'}
+                    {activeDriver?.phone} &bull; License details not provided
                   </div>
                 </div>
               </div>
@@ -320,6 +405,40 @@ export function Driver() {
               )}
             </div>
 
+            {session?.user.role === 'DRIVER' && (
+              <section className="rounded-lg border border-base-600 bg-base-900/90 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="eyebrow">Driver GPS sharing</div>
+                    <p className="mt-1 text-xs leading-relaxed text-ink-300">
+                      Share this device's location with your assigned fleet's Control Tower while you are on duty.
+                      Your browser will ask for permission. You can stop sharing at any time.
+                    </p>
+                    <p className="mt-2 text-[11px] text-ink-400" aria-live="polite">{gpsMessage}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!truckId}
+                    onClick={() => {
+                      if (gpsSharing) {
+                        setGpsSharing(false);
+                        setGpsMessage('Location sharing stopped.');
+                      } else {
+                        lastGpsSentAt.current = 0;
+                        setGpsSharing(true);
+                      }
+                    }}
+                    className={cn(
+                      'shrink-0 rounded-md px-4 py-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                      gpsSharing ? 'border border-danger/50 bg-danger/10 text-danger hover:bg-danger/20' : 'bg-healthy text-base-950 hover:bg-healthy/90',
+                    )}
+                  >
+                    {gpsSharing ? 'Stop sharing' : 'Enable location sharing'}
+                  </button>
+                </div>
+              </section>
+            )}
+
             {/* CRITICAL SOS ACTIVE BANNER */}
             {isSosIncident && (
               <div className="relative overflow-hidden rounded-lg border-2 border-danger bg-danger/15 p-4 shadow-incident animate-pulse">
@@ -331,7 +450,7 @@ export function Driver() {
                         EMERGENCY SOS BROADCAST ACTIVE
                       </div>
                       <div className="mt-0.5 text-xs text-ink-200">
-                        GPS distress beacon transmitting to Control Tower &bull; Tow &amp; Rescue dispatched
+                        Incident recorded and visible to the Control Tower for response coordination
                       </div>
                     </div>
                   </div>
@@ -348,20 +467,7 @@ export function Driver() {
                   <span>&bull;</span>
                   <span>Speed: 0 km/h</span>
                   <span>&bull;</span>
-                  <span className="text-healthy font-semibold">AI Reroute Engine: STANDBY DETOUR</span>
-                </div>
-              </div>
-            )}
-
-            {/* AI CORRIDOR REROUTE ADVISORY (shown if incident or detour active) */}
-            {isSosIncident && (
-              <div className="rounded-lg border border-warn/40 bg-warn/10 p-3.5 text-xs text-warn">
-                <div className="flex items-center gap-2 font-bold uppercase tracking-wider">
-                  <span>⚠️</span>
-                  <span>Authorized Highway Detour Route</span>
-                </div>
-                <div className="mt-1.5 leading-relaxed text-ink-300">
-                  NH-48 obstructed at Hosur km 42. Detour via <strong className="text-ink-100">SH-17 Denkanikottai Bypass</strong> is approved by Control Tower. Rejoin NH-48 at Krishnagiri. Expected ETA overhead: +32 mins (+24 km).
+                  <span className="text-ink-300 font-semibold">Incident sent to Control Tower</span>
                 </div>
               </div>
             )}
@@ -395,9 +501,9 @@ export function Driver() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between text-sm">
-                  <span className="font-semibold text-ink-100">{truck.origin}</span>
+                  <span className="font-semibold text-ink-100">{truck.origin ?? 'Not recorded'}</span>
                   <span className="font-mono text-xs text-ink-500">&bull;&bull;&bull; NH-48 Corridor &bull;&bull;&bull;&gt;</span>
-                  <span className="font-semibold text-ink-100">{truck.destination}</span>
+                  <span className="font-semibold text-ink-100">{truck.destination ?? 'Not recorded'}</span>
                 </div>
 
                 <div className="tabular mt-3 grid grid-cols-2 gap-2">
@@ -516,6 +622,37 @@ export function Driver() {
                 </div>
               )}
             </Panel>
+
+            {session?.user.role === 'DRIVER' && recoveryOffers.length > 0 && (
+              <Panel eyebrow="Emergency Assistance" title="Replacement shipment request" bodyClassName="p-4">
+                <p className="mb-3 text-xs leading-relaxed text-ink-300">
+                  A vehicle on a compatible route has been selected to help recover a stranded shipment. Review the request and accept only if you can safely reach the handover point and carry the listed cargo.
+                </p>
+                <div className="space-y-3">
+                  {recoveryOffers.map((plan) => {
+                    const alreadyAccepted = plan.driverAcceptedBy === activeDriver?.id && Boolean(plan.driverAcceptedAt);
+                    const option = plan.options?.find((item) => item.truckId === plan.selectedTruckId);
+                    return (
+                      <article key={plan.id} className="rounded-lg border border-warn/40 bg-warn/[0.06] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs font-semibold text-ink-50">{plan.id}</span>
+                          <StatusPill status={alreadyAccepted ? 'ACCEPTED' : 'AWAITING DRIVER'} tone={alreadyAccepted ? 'healthy' : 'warn'} />
+                        </div>
+                        <div className="mt-2 text-xs text-ink-300">Shipment(s): <span className="font-mono text-ink-100">{(plan.affectedShipmentIds ?? []).join(', ')}</span></div>
+                        <div className="mt-1 text-xs text-ink-400">Your vehicle: {truck?.id ?? '—'} · Spare capacity: {formatT(truck?.availableT ?? 0)} · Estimated arrival: {option?.etaMinutes ?? '—'} min</div>
+                        {alreadyAccepted ? (
+                          <p className="mt-2 rounded border border-healthy/30 bg-healthy/10 px-2.5 py-2 text-xs text-healthy">You accepted this recovery request. Coordinate the cargo handover with the affected driver and Control Tower.</p>
+                        ) : (
+                          <button type="button" className="btn-primary mt-3 w-full" disabled={acting !== null} onClick={() => void acceptRecoveryOffer(plan.id)}>
+                            {acting === plan.id ? 'Accepting…' : 'Accept emergency shipment handover'}
+                          </button>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              </Panel>
+            )}
 
             {/* Active Load Details */}
             <Panel eyebrow="Current Cargo" title="Assigned Shipment" bodyClassName="p-4">
@@ -692,7 +829,6 @@ export function Driver() {
               {snapshot.drivers.map((drv) => {
                 const assignedTruck = snapshot.trucks.find((t) => t.id === drv.assignedTruckId);
                 const isCurrent = drv.id === selectedDriverId;
-                const metrics = DRIVER_METRICS[drv.id] ?? { safetyScore: 98.0, completedHauls: 120, license: 'DL-Commercial' };
 
                 return (
                   <div
@@ -733,12 +869,8 @@ export function Driver() {
                         <span className="font-mono text-ink-300">{assignedTruck?.registrationNo ?? '—'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-ink-500">Safety Score:</span>
-                        <span className="font-mono text-ink-100">{metrics.safetyScore}% on-time</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-ink-500">Completed Hauls:</span>
-                        <span className="font-mono text-ink-100">{metrics.completedHauls} trips</span>
+                        <span className="text-ink-500">Performance:</span>
+                        <span className="font-mono text-ink-400">No verified history yet</span>
                       </div>
                     </div>
 
@@ -789,7 +921,7 @@ export function Driver() {
 
             <div className="p-5">
               <p className="text-xs text-ink-300 leading-relaxed">
-                This broadcast alerts the Control Tower, logs an authoritative breakdown incident, and immediately engages the <strong>AI Corridor Reroute Engine</strong>.
+                This broadcast alerts the Control Tower, logs an authoritative breakdown incident, and sends the incident to the Control Tower for review and response coordination.
               </p>
 
               <div className="mt-4 space-y-2">
@@ -822,10 +954,18 @@ export function Driver() {
                 ))}
               </div>
 
-              <div className="mt-5 rounded-md border border-base-700 bg-base-950 p-3 font-mono text-[11px] text-ink-400">
-                <div>Vehicle: <strong className="text-ink-100">{truck?.id} ({truck?.registrationNo})</strong></div>
-                <div>Driver: <strong className="text-ink-100">{activeDriver?.name} ({activeDriver?.phone})</strong></div>
-                <div>Telemetry: <strong className="text-healthy">{truck?.lat?.toFixed(4)}, {truck?.lng?.toFixed(4)}</strong></div>
+              <label className="mt-4 block">
+                <span className="text-2xs font-bold uppercase tracking-wider text-ink-400">Current location / nearest landmark (GPS will be requested)</span>
+                <input className="field mt-1" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Hosur toll plaza / NH 48" />
+              </label>
+              <label className="mt-4 block">
+                <span className="text-2xs font-bold uppercase tracking-wider text-ink-400">Describe the problem (optional)</span>
+                <textarea className="field mt-1 min-h-[76px]" maxLength={250} value={emergencyDetails} onChange={(e) => setEmergencyDetails(e.target.value)} placeholder="Describe what happened, warning lights, vehicle condition or help required…" />
+              </label>
+              <div className="mt-3 rounded-md border border-base-700 bg-base-950 p-3 text-[11px] text-ink-400">
+                Vehicle: <strong className="text-ink-100">{truck?.id} ({truck?.registrationNo})</strong><br />
+                Driver: <strong className="text-ink-100">{activeDriver?.name}</strong><br />
+                FleetGrid requests a fresh device GPS fix when you transmit SOS. It will not use an old demo coordinate as your emergency location.
               </div>
 
               <div className="mt-5 flex gap-3">

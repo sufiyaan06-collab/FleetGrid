@@ -1,4 +1,5 @@
 import { db } from '../store/db.js';
+import { isProductionEnvironment } from '../config.js';
 import { ApiError } from '../lib/errors.js';
 import { newId, nowIso, round } from '../lib/ids.js';
 import { runExclusive } from '../lib/mutex.js';
@@ -7,7 +8,8 @@ import { hub } from './realtime.js';
 import { getIncident, setIncidentStatus } from './incidents.js';
 import { getShipment, releaseCapacity, setShipmentStatus } from './shipments.js';
 import { transitionTruck } from './trucks.js';
-import { RECOVERY_PLAN_TRANSITIONS, type RecoveryOption, type RecoveryPlan } from '../types.js';
+import { segmentFit } from '../lib/geo.js';
+import { RECOVERY_PLAN_TRANSITIONS, type RecoveryOption, type RecoveryPlan, type Truck } from '../types.js';
 
 /**
  * Deterministic demo estimates (Master PRD §17).
@@ -51,20 +53,28 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
   const incident = await getIncident(incidentId);
   const truck = await db.trucks.findById(incident.truckId);
   if (!truck) throw ApiError.notFound(`Truck ${incident.truckId} does not exist.`);
+  const origin = truck.origin;
+  const destination = truck.destination;
+  if (!origin?.trim() || !destination?.trim()) {
+    throw ApiError.conflict('Recovery planning requires a recorded origin and destination for the affected truck.');
+  }
 
-  const shipments = await db.shipments.find((s) => incident.affectedShipmentIds.includes(s.id));
+  if (!incident.affectedShipmentIds?.length) {
+    throw ApiError.conflict('This legacy incident has no verified affected-shipment list. Review its shipment links before generating a recovery plan.');
+  }
+  const shipments = await db.shipments.find((s) => incident.affectedShipmentIds!.includes(s.id));
   const totalWeightT = round(shipments.reduce((sum, s) => sum + s.weightT, 0));
 
   return {
     incidentId: incident.id,
     truckId: truck.id,
     location: incident.location,
-    origin: truck.origin,
-    destination: truck.destination,
+    origin,
+    destination,
     totalWeightT,
     affectedShipments: shipments.map((s) => ({
       id: s.id,
-      cargoName: s.cargoName,
+      cargoName: s.cargoName ?? 'Cargo description not recorded',
       weightT: s.weightT,
       status: s.status,
       origin: s.origin,
@@ -73,20 +83,27 @@ export async function calculateImpact(incidentId: string): Promise<ImpactSummary
       deadlineAt: s.deadlineAt,
     })),
     notes: [
-      `Truck ${truck.id} is blocked at ${incident.location} (${incident.severity.toLowerCase()} severity).`,
+      `Truck ${truck.id} is blocked at ${incident.location} (${(incident.severity ?? 'unknown').toLowerCase()} severity).`,
       `${shipments.length} shipment(s) carrying ${totalWeightT}T are now AT_RISK.`,
       'Distances and ETAs below are demo estimates unless a routing provider is integrated.',
     ],
   };
 }
 
+function pointForTruck(truck: Truck): { lat: number; lng: number } | null {
+  const { lat, lng } = truck;
+  if (lat === null || lng === null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
 function estimateLeg(
   truckId: string,
-  from: { lat: number; lng: number },
-  to: { lat: number; lng: number },
-): { distanceKm: number; etaMinutes: number } {
+  from: { lat: number; lng: number } | null,
+  to: { lat: number; lng: number } | null,
+): { distanceKm: number; etaMinutes: number } | null {
   const seeded = DEMO_LEG_ESTIMATES[truckId];
   if (seeded && UNASSIGNED_RECOVERY_TRUCKS.includes(truckId)) return seeded;
+  if (!from || !to) return null;
 
   const distanceKm = round(haversineKm(from, to) * ROAD_FACTOR, 1);
   return { distanceKm, etaMinutes: Math.max(5, Math.round((distanceKm / DEMO_SPEED_KMH) * 60)) };
@@ -115,41 +132,59 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
   const blockedTruck = await db.trucks.findById(impact.truckId);
   if (!blockedTruck) throw ApiError.notFound(`Truck ${impact.truckId} does not exist.`);
 
-  const [trucks, offers, drivers] = await Promise.all([
+  const [trucks, offers, drivers, users, organizations, authAccounts] = await Promise.all([
     db.trucks.get(),
     db.capacityOffers.get(),
     db.drivers.get(),
+    db.users.get(),
+    db.organizations.get(),
+    db.authAccounts.get(),
   ]);
+  const production = isProductionEnvironment();
 
-  const incidentPoint = Number.isFinite(blockedTruck.lat)
-    ? { lat: blockedTruck.lat, lng: blockedTruck.lng }
-    : { lat: blockedTruck.lat, lng: blockedTruck.lng };
+  const incidentPoint = pointForTruck(blockedTruck);
 
   const options: RecoveryOption[] = trucks
-    .filter((truck) => truck.id !== blockedTruck.id)
-    .map((truck) => {
-      const offer = offers.find((o) => o.truckId === truck.id);
-      const leg = estimateLeg(truck.id, incidentPoint, { lat: truck.lat, lng: truck.lng });
-      const cost = Math.round(impact.totalWeightT * (offer?.pricePerT ?? 850) * RECOVERY_COST_MULTIPLIER);
+    .flatMap((truck) => {
+      if (truck.id === blockedTruck.id) return [];
+      const offer = offers.find((candidate) => candidate.truckId === truck.id);
+      const truckPoint = pointForTruck(truck);
+      const leg = estimateLeg(truck.id, incidentPoint, truckPoint);
+      if (!leg) return [];
 
+      const pricePerT = offer && offer.pricePerT !== null && Number.isFinite(offer.pricePerT) && offer.pricePerT > 0
+        ? offer.pricePerT
+        : null;
+      const cost = pricePerT === null ? null : Math.round(impact.totalWeightT * pricePerT * RECOVERY_COST_MULTIPLIER);
       const blockers: string[] = [];
+      const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
+      if (!driver) {
+        blockers.push('no registered driver is assigned to this vehicle');
+      } else {
+        if (driver.assignedTruckId !== truck.id) blockers.push('driver assignment does not match this vehicle');
+        if (!['AVAILABLE', 'ON_JOURNEY'].includes(driver.status)) blockers.push(`driver is ${driver.status.toLowerCase().replace('_', ' ')}`);
+        const driverUser = users.find((u) => u.id === driver.userId && u.role === 'DRIVER' && u.organizationId === truck.organizationId);
+        if (!driverUser || driver.organizationId !== truck.organizationId) blockers.push('driver account or fleet ownership is invalid');
+        const operator = organizations.find((o) => o.id === truck.organizationId && o.type === 'FLEET_OPERATOR' && o.status === 'ACTIVE');
+        if (!operator) blockers.push('fleet operator is not active');
+        if (production && !authAccounts.some((a) => a.id === driver.userId && Boolean(a.emailVerifiedAt))) blockers.push('driver email is not verified');
+      }
+      if (!['AVAILABLE', 'ASSIGNED', 'IN_TRANSIT'].includes(truck.status)) blockers.push(`truck is ${truck.status.toLowerCase().replace('_', ' ')}`);
+      if (offer?.status === 'CLOSED') blockers.push('capacity offer is closed');
       if (truck.availableT < impact.totalWeightT) {
         blockers.push(`insufficient spare capacity (${round(truck.availableT)}T < ${impact.totalWeightT}T)`);
       }
-      if (truck.destination !== impact.destination) {
-        blockers.push(`does not deliver to ${impact.destination}`);
-      }
-      if (truck.origin !== impact.origin) {
-        blockers.push(`does not pick up from ${impact.origin}`);
+      const coversAffectedRoutes = impact.affectedShipments.every((shipment) => {
+        const fit = segmentFit(truck.origin, truck.destination, shipment.origin, shipment.destination);
+        return fit === 'EXACT' || fit === 'PARTIAL';
+      });
+      if (!coversAffectedRoutes) {
+        blockers.push('route does not cover every affected shipment in the same direction');
       }
       if (UNAVAILABLE_RECOVERY_STATES.has(truck.status)) {
         blockers.push(`truck is ${truck.status}`);
       }
-      if (offer?.status === 'CLOSED') {
-        blockers.push('capacity offer closed');
-      }
 
-      const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
       const facts = [
         `${round(truck.availableT)}T spare`,
         `${leg.distanceKm} km away`,
@@ -157,7 +192,7 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
         driver ? `driver ${driver.name}` : 'no driver assigned',
       ];
 
-      return {
+      return [{
         truckId: truck.id,
         availableT: round(truck.availableT),
         etaMinutes: leg.etaMinutes,
@@ -166,14 +201,15 @@ export async function findRecoveryOptions(incidentId: string): Promise<{
         currency: 'INR',
         compatible: blockers.length === 0,
         reason: blockers.length === 0 ? `Compatible: ${facts.join(', ')}` : `Rejected: ${blockers.join('; ')}`,
-      } satisfies RecoveryOption;
+      } satisfies RecoveryOption];
     })
     .sort((a, b) => {
       if (a.compatible !== b.compatible) return a.compatible ? -1 : 1;
       if (a.etaMinutes !== b.etaMinutes) return a.etaMinutes - b.etaMinutes;
-      return a.cost - b.cost;
+      if (a.cost === null && b.cost !== null) return 1;
+      if (a.cost !== null && b.cost === null) return -1;
+      return (a.cost ?? 0) - (b.cost ?? 0);
     });
-
   void incident;
   return { impact, options };
 }
@@ -209,7 +245,23 @@ export async function createRecoveryPlan(incidentId: string): Promise<CreatePlan
     const existing = await db.recoveryPlans.find((p) => p.incidentId === incidentId);
     if (existing.length > 0) {
       const plan = existing[0] as RecoveryPlan;
-      return { plan, incident, options: plan.options, created: false };
+      // If no eligible replacement was available at the time of the SOS, allow
+      // the Control Tower to recheck later while the plan is still awaiting approval.
+      if (plan.status === 'PENDING_APPROVAL' && !plan.selectedTruckId) {
+        const compatible = options.filter((option) => option.compatible);
+        const selected = compatible[0] ?? null;
+        const refreshed = await db.recoveryPlans.update(plan.id, {
+          options,
+          selectedTruckId: selected?.truckId ?? null,
+          cost: selected?.cost ?? null,
+          etaDeltaMinutes: selected ? selected.etaMinutes + CARGO_TRANSFER_MINUTES : 0,
+          updatedAt: nowIso(),
+        });
+        if (!refreshed) throw ApiError.notFound(`Recovery plan ${plan.id} disappeared during recheck.`);
+        hub.broadcast('recovery.updated', refreshed);
+        return { plan: refreshed, incident, options, created: false };
+      }
+      return { plan, incident, options: plan.options ?? [], created: false };
     }
 
     if (incident.status === 'OPEN') {
@@ -229,7 +281,7 @@ export async function createRecoveryPlan(incidentId: string): Promise<CreatePlan
       affectedShipmentIds: impact.affectedShipments.map((s) => s.id),
       options,
       selectedTruckId: selected?.truckId ?? null,
-      cost: selected?.cost ?? 0,
+      cost: selected?.cost ?? null,
       etaDeltaMinutes: selected ? selected.etaMinutes + CARGO_TRANSFER_MINUTES : 0,
       status: 'PENDING_APPROVAL',
       approvedBy: null,
@@ -277,9 +329,32 @@ export async function approveRecoveryPlan(planId: string, approvedBy: string): P
       status: 'APPROVED',
       approvedBy,
       approvedAt: nowIso(),
+      driverAcceptedBy: null,
+      driverAcceptedAt: null,
       updatedAt: nowIso(),
     });
     if (!updated) throw ApiError.notFound(`Recovery plan ${planId} disappeared during approval.`);
+    const incident = await getIncident(updated.incidentId);
+    const affectedTruck = await db.trucks.findById(incident.truckId);
+    const replacementTruck = updated.selectedTruckId ? await db.trucks.findById(updated.selectedTruckId) : undefined;
+    const replacementDriver = replacementTruck?.driverId ? await db.drivers.findById(replacementTruck.driverId) : undefined;
+    if (replacementDriver) {
+      const notice = await db.notifications.create({
+        id: newId('ntf'), recipientId: replacementDriver.userId, type: 'RECOVERY_ASSISTANCE_REQUEST',
+        message: `Emergency assistance requested: collect shipment ${(updated.affectedShipmentIds ?? []).join(', ')} from ${affectedTruck?.id ?? 'the affected vehicle'} at ${incident.location}. Review and accept this recovery request in FleetGrid.`,
+        status: 'PENDING', createdAt: nowIso(),
+      });
+      hub.broadcast('notification.created', notice);
+    }
+    const strandedDriver = affectedTruck?.driverId ? await db.drivers.findById(affectedTruck.driverId) : undefined;
+    if (strandedDriver) {
+      const notice = await db.notifications.create({
+        id: newId('ntf'), recipientId: strandedDriver.userId, type: 'RECOVERY_CANDIDATE_FOUND',
+        message: `A replacement vehicle has been identified for your shipment. Waiting for its driver to accept the handover.`,
+        status: 'PENDING', createdAt: nowIso(),
+      });
+      hub.broadcast('notification.created', notice);
+    }
     await recordEvent({
       eventType: 'recovery.approved',
       incidentId: updated.incidentId,
@@ -309,6 +384,45 @@ export async function rejectRecoveryPlan(planId: string, rejectedBy: string, rea
       actorType: 'OPERATOR',
       actorId: rejectedBy,
     });
+    hub.broadcast('recovery.updated', updated);
+    return updated;
+  });
+}
+
+/** Replacement driver acceptance is tied to the authenticated driver's own assigned truck. */
+export async function acceptRecoveryPlan(planId: string, userId: string): Promise<RecoveryPlan> {
+  return runExclusive(async () => {
+    const plan = await getRecoveryPlan(planId);
+    if (plan.status !== 'APPROVED') {
+      throw ApiError.conflict('This recovery request is not awaiting driver acceptance.', { status: plan.status });
+    }
+    if (!plan.selectedTruckId) throw ApiError.conflict('No replacement vehicle has been selected for this recovery request.');
+    const driver = (await db.drivers.find((item) => item.userId === userId))[0];
+    if (!driver || driver.assignedTruckId === null) throw new ApiError(403, 'FORBIDDEN', 'No assigned driver vehicle is linked to this account.');
+    const truck = await db.trucks.findById(plan.selectedTruckId);
+    if (!truck || truck.driverId !== driver.id || driver.assignedTruckId !== truck.id) {
+      throw new ApiError(403, 'FORBIDDEN', 'This recovery request is assigned to a different driver and vehicle.');
+    }
+    if (plan.driverAcceptedAt && plan.driverAcceptedBy === driver.id) return plan;
+    if (plan.driverAcceptedAt) throw ApiError.conflict('Another driver has already accepted this recovery request.');
+    const updated = await db.recoveryPlans.update(planId, {
+      driverAcceptedBy: driver.id,
+      driverAcceptedAt: nowIso(),
+      updatedAt: nowIso(),
+    });
+    if (!updated) throw ApiError.notFound(`Recovery plan ${planId} disappeared during acceptance.`);
+    const incident = await getIncident(plan.incidentId);
+    const affectedTruck = await db.trucks.findById(incident.truckId);
+    const strandedDriver = affectedTruck?.driverId ? await db.drivers.findById(affectedTruck.driverId) : undefined;
+    if (strandedDriver) {
+      const notice = await db.notifications.create({
+        id: newId('ntf'), recipientId: strandedDriver.userId, type: 'RECOVERY_DRIVER_ACCEPTED',
+        message: `The driver of replacement vehicle ${truck.id} has accepted the shipment handover. Coordinate the cargo transfer at ${incident.location}.`,
+        status: 'PENDING', createdAt: nowIso(),
+      });
+      hub.broadcast('notification.created', notice);
+    }
+    await recordEvent({ eventType: 'recovery.driver_accepted', incidentId: incident.id, truckId: truck.id, payload: { planId, replacementDriverId: driver.id, replacementTruckId: truck.id }, actorType: 'DRIVER', actorId: userId });
     hub.broadcast('recovery.updated', updated);
     return updated;
   });
@@ -354,7 +468,17 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     if (!plan.selectedTruckId) {
       throw ApiError.conflict(`Recovery plan ${planId} has no selected replacement truck, so it cannot execute.`);
     }
+    if (!plan.driverAcceptedAt || !plan.driverAcceptedBy) {
+      throw ApiError.conflict('The replacement driver must accept the recovery request before shipment handover can execute.', { required: 'DRIVER_ACCEPTANCE' });
+    }
 
+    if (
+      !plan.affectedShipmentIds?.length ||
+      plan.etaDeltaMinutes === null ||
+      !plan.options?.length
+    ) {
+      throw ApiError.conflict('This recovery plan has incomplete legacy shipment, option, cost, or ETA data and cannot be executed. Generate a fresh reviewed plan first.');
+    }
     await db.recoveryPlans.update(planId, { status: 'EXECUTING', updatedAt: nowIso() });
 
     const incident = await getIncident(plan.incidentId);
@@ -362,10 +486,14 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     const targetTruck = await db.trucks.findById(plan.selectedTruckId);
     if (!originalTruck) throw ApiError.notFound(`Truck ${incident.truckId} does not exist.`);
     if (!targetTruck) throw ApiError.notFound(`Replacement truck ${plan.selectedTruckId} does not exist.`);
+    if (!targetTruck.driverId || targetTruck.driverId !== plan.driverAcceptedBy) {
+      throw ApiError.conflict('The accepting driver is no longer assigned to the selected replacement vehicle. Re-analyze recovery before proceeding.');
+    }
 
     const reassignments: ExecuteResult['reassignments'] = [];
+    let targetAvailableT = targetTruck.availableT;
 
-    for (const shipmentId of plan.affectedShipmentIds) {
+    for (const shipmentId of (plan.affectedShipmentIds ?? [])) {
       const shipment = await db.shipments.findById(shipmentId);
       if (!shipment) continue;
       if (shipment.truckId === targetTruck.id) {
@@ -375,14 +503,15 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
 
       const release = await releaseCapacity(shipment, `Recovery plan ${planId} approved by ${executedBy}`);
 
-      if (targetTruck.availableT < shipment.weightT) {
+      if (targetAvailableT < shipment.weightT) {
         throw ApiError.unprocessable(
-          `Replacement truck ${targetTruck.id} now has only ${round(targetTruck.availableT)}T spare, which cannot take ${shipment.weightT}T.`,
+          `Replacement truck ${targetTruck.id} now has only ${round(targetAvailableT)}T spare, which cannot take ${shipment.weightT}T.`,
         );
       }
+      targetAvailableT = round(targetAvailableT - shipment.weightT);
 
       const decremented = await db.trucks.update(targetTruck.id, {
-        availableT: round(targetTruck.availableT - shipment.weightT),
+        availableT: targetAvailableT,
         status: targetTruck.status === 'AVAILABLE' ? 'ASSIGNED' : targetTruck.status,
       });
       if (!decremented) throw ApiError.notFound(`Truck ${targetTruck.id} disappeared during recovery.`);
@@ -444,6 +573,19 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
       });
     }
 
+    const replacementAfterHandoff = await db.trucks.findById(targetTruck.id);
+    if (replacementAfterHandoff?.status === 'ASSIGNED') {
+      await transitionTruck(replacementAfterHandoff, 'IN_TRANSIT', {}, {
+        eventType: 'truck.recovery_departure',
+        payload: { planId: plan.id, incidentId: incident.id, acceptedBy: plan.driverAcceptedBy },
+      });
+    }
+    const replacementDriverProfile = targetTruck.driverId ? await db.drivers.findById(targetTruck.driverId) : undefined;
+    if (replacementDriverProfile?.status === 'AVAILABLE') {
+      await db.drivers.update(replacementDriverProfile.id, { status: 'ON_JOURNEY' });
+      hub.broadcast('driver.updated', await db.drivers.findById(replacementDriverProfile.id));
+    }
+
     if (originalTruck.status === 'INCIDENT') {
       await transitionTruck(originalTruck, 'RECOVERY', {}, {
         eventType: 'truck.recovery',
@@ -463,10 +605,8 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
         const moved = await setIncidentStatus(currentIncident, next, { planId: plan.id });
         await setIncidentStatus(moved, 'PLAN_READY', { planId: plan.id });
       }
-      const ready = await db.incidents.findById(incident.id);
-      if (ready && ready.status === 'PLAN_READY') {
-        await setIncidentStatus(ready, 'RESOLVED', { planId: plan.id, resolvedBy: plan.approvedBy });
-      }
+      // Keep the incident in PLAN_READY after cargo recovery: the shipment is safe,
+      // but the original vehicle remains disabled until an operator confirms repair.
     }
 
     const notificationIds: string[] = [];
@@ -474,27 +614,30 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     if (targetDriver) {
       const row = await db.notifications.create({
         id: newId('ntf'),
-        recipientId: targetDriver.id,
+        recipientId: targetDriver.userId,
         type: 'RECOVERY_INSTRUCTION',
-        message: `Collect ${plan.affectedShipmentIds.join(', ')} from ${originalTruck.id} at ${incident.location} and continue to ${targetTruck.destination}.`,
+        message: `Collect ${(plan.affectedShipmentIds ?? []).join(', ')} from ${originalTruck.id} at ${incident.location} and continue to ${targetTruck.destination ?? 'the recorded destination'}.`,
         status: 'PENDING',
         createdAt: nowIso(),
       });
       notificationIds.push(row.id);
     }
-    for (const shipmentId of plan.affectedShipmentIds) {
+    for (const shipmentId of (plan.affectedShipmentIds ?? [])) {
       const shipment = await db.shipments.findById(shipmentId);
       if (!shipment) continue;
-      const row = await db.notifications.create({
-        id: newId('ntf'),
-        recipientId: shipment.shipperId,
-        type: 'SHIPMENT_RECOVERED',
-        message: `Shipment ${shipment.id} (${shipment.cargoName}) is being moved by ${targetTruck.id} after a breakdown near ${incident.location}. Revised ETA impact: +${plan.etaDeltaMinutes} min (demo estimate).`,
-        status: 'PENDING',
-        createdAt: nowIso(),
-      });
-      notificationIds.push(row.id);
-      hub.broadcast('notification.created', row);
+      const shipperUsers = await db.users.find((user) => user.organizationId === shipment.shipperId && user.role === 'BUSINESS');
+      for (const shipperUser of shipperUsers) {
+        const row = await db.notifications.create({
+          id: newId('ntf'),
+          recipientId: shipperUser.id,
+          type: 'SHIPMENT_RECOVERED',
+          message: `Shipment ${shipment.id} (${shipment.cargoName}) is being moved by ${targetTruck.id} after a breakdown near ${incident.location}. Revised ETA impact: +${plan.etaDeltaMinutes} min (demo estimate).`,
+          status: 'PENDING',
+          createdAt: nowIso(),
+        });
+        notificationIds.push(row.id);
+        hub.broadcast('notification.created', row);
+      }
     }
 
     const completed = await db.recoveryPlans.update(planId, {
@@ -503,19 +646,13 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
     });
     if (!completed) throw ApiError.notFound(`Recovery plan ${planId} disappeared during execution.`);
 
-    // The cargo has been moved off the disabled truck, so it goes back into service
-    // rather than staying stranded in RECOVERY. Demo assumption: repaired on site.
-    const releasedTruck = await db.trucks.findById(originalTruck.id);
-    if (releasedTruck && releasedTruck.status === 'RECOVERY') {
-      const backInService = await transitionTruck(releasedTruck, 'AVAILABLE', {}, {
-        eventType: 'truck.returned_to_service',
-        payload: { planId: plan.id, incidentId: incident.id },
-      });
-      const releasedDriver = backInService.driverId ? await db.drivers.findById(backInService.driverId) : undefined;
-      if (releasedDriver && releasedDriver.status === 'ON_JOURNEY') {
-        await db.drivers.update(releasedDriver.id, { status: 'AVAILABLE' });
-        hub.broadcast('driver.updated', await db.drivers.findById(releasedDriver.id));
-      }
+    // The original vehicle is still mechanically disabled. Keep it in RECOVERY
+    // until an operator explicitly confirms repair; transferring the shipment must
+    // never falsely mark a broken-down truck as roadworthy.
+    const strandedDriver = originalTruck.driverId ? await db.drivers.findById(originalTruck.driverId) : undefined;
+    if (strandedDriver && strandedDriver.status === 'ON_JOURNEY') {
+      await db.drivers.update(strandedDriver.id, { status: 'INCIDENT_REPORTED' });
+      hub.broadcast('driver.updated', await db.drivers.findById(strandedDriver.id));
     }
 
     await recordEvent({
@@ -539,11 +676,12 @@ export async function executeRecoveryPlan(planId: string, executedBy: string): P
 
 async function readPlanState(plan: RecoveryPlan): Promise<Omit<ExecuteResult, 'alreadyExecuted'>> {
   const incident = await db.incidents.findById(plan.incidentId);
-  const shipment = plan.affectedShipmentIds[0] ? await getShipment(plan.affectedShipmentIds[0]) : null;
+  const affectedShipmentIds = plan.affectedShipmentIds ?? [];
+  const shipment = affectedShipmentIds[0] ? await getShipment(affectedShipmentIds[0]) : null;
   const fromTruck = incident ? await db.trucks.findById(incident.truckId) : undefined;
   const toTruck = plan.selectedTruckId ? await db.trucks.findById(plan.selectedTruckId) : undefined;
 
-  const reassignments: ExecuteResult['reassignments'] = plan.affectedShipmentIds.map((id) => ({
+  const reassignments: ExecuteResult['reassignments'] = affectedShipmentIds.map((id) => ({
     shipmentId: id,
     fromTruckId: fromTruck?.id ?? null,
     toTruckId: plan.selectedTruckId ?? '',

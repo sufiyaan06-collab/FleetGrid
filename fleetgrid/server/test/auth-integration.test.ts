@@ -1,0 +1,432 @@
+import assert from 'node:assert/strict';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hashPassword, hashOpaqueToken, issueSessionToken, issueVerificationToken } from '../src/services/authSecurity.js';
+
+const dataDir = await mkdtemp(join(tmpdir(), 'fleetgrid-auth-'));
+const port = 4317 + Math.floor(Math.random() * 300);
+const base = `http://127.0.0.1:${port}`;
+const password = 'FleetGrid-Integration-Password-2026';
+const now = new Date().toISOString();
+const orgs = [
+  { id: 'shipper_a', name: 'Shipper A', type: 'SHIPPER', status: 'ACTIVE', createdAt: now },
+  { id: 'shipper_b', name: 'Shipper B', type: 'SHIPPER', status: 'ACTIVE', createdAt: now },
+  { id: 'fleet_a', name: 'Fleet A', type: 'FLEET_OPERATOR', status: 'ACTIVE', createdAt: now },
+  { id: 'suspended_org', name: 'Suspended Shipper', type: 'SHIPPER', status: 'SUSPENDED', createdAt: now },
+  { id: 'verify_org', name: 'Verification Shipper', type: 'SHIPPER', status: 'ACTIVE', createdAt: now },
+];
+const users = [
+  { id: 'user_a', name: 'Shipper A User', role: 'BUSINESS', organizationId: 'shipper_a', contact: 'a@example.test', createdAt: now },
+  { id: 'user_b', name: 'Shipper B User', role: 'BUSINESS', organizationId: 'shipper_b', contact: 'b@example.test', createdAt: now },
+  { id: 'driver_user', name: 'Driver User', role: 'DRIVER', organizationId: 'fleet_a', contact: 'driver@example.test', createdAt: now },
+  { id: 'driver_other', name: 'Other Driver', role: 'DRIVER', organizationId: 'fleet_a', contact: 'other-driver@example.test', createdAt: now },
+  { id: 'suspended_user', name: 'Suspended User', role: 'BUSINESS', organizationId: 'suspended_org', contact: 'suspended@example.test', createdAt: now },
+  { id: 'verify_user', name: 'Verify User', role: 'BUSINESS', organizationId: 'verify_org', contact: 'verify@example.test', createdAt: now },
+];
+const tokenA = issueSessionToken();
+const tokenB = issueSessionToken();
+const tokenDriver = issueSessionToken();
+const tokenSuspended = issueSessionToken();
+const verificationToken = issueVerificationToken();
+const passwordHash = await hashPassword(password);
+const accounts = [
+  { id: 'user_a', email: 'a@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenA.tokenHash, sessionExpiresAt: tokenA.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
+  { id: 'user_b', email: 'b@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenB.tokenHash, sessionExpiresAt: tokenB.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
+  { id: 'driver_user', email: 'driver@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenDriver.tokenHash, sessionExpiresAt: tokenDriver.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
+  { id: 'suspended_user', email: 'suspended@example.test', passwordHash, emailVerifiedAt: now, verificationTokenHash: null, verificationExpiresAt: null, sessionTokenHash: tokenSuspended.tokenHash, sessionExpiresAt: tokenSuspended.expiresAt, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
+  { id: 'verify_user', email: 'verify@example.test', passwordHash, emailVerifiedAt: null, verificationTokenHash: verificationToken.tokenHash, verificationExpiresAt: verificationToken.expiresAt, sessionTokenHash: null, sessionExpiresAt: null, failedLoginCount: 0, lockedUntil: null, createdAt: now, updatedAt: now },
+];
+const shipments = [
+  { id: 'shipment_a', reference: 'A-001', cargoName: 'Private cargo A', shipperId: 'shipper_a', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'CONFIRMED', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
+  { id: 'shipment_b', reference: 'B-001', cargoName: 'Private cargo B', shipperId: 'shipper_b', origin: 'C', destination: 'D', weightT: 1, deadlineAt: null, status: 'DRAFT', truckId: null, capacityOfferId: null, price: 100, currency: 'INR', createdAt: now, updatedAt: now },
+  { id: 'shipment_zero_price', reference: 'B-002', cargoName: 'Unpriced cargo', shipperId: 'shipper_b', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'CONFIRMED', truckId: null, capacityOfferId: null, price: 0, currency: 'INR', createdAt: now, updatedAt: now },
+  { id: 'shipment_bad_currency', reference: 'B-003', cargoName: 'Invalid currency cargo', shipperId: 'shipper_b', origin: 'A', destination: 'B', weightT: 1, deadlineAt: null, status: 'CONFIRMED', truckId: null, capacityOfferId: null, price: 100, currency: 'IN', createdAt: now, updatedAt: now },
+];
+for (const [name, rows] of Object.entries({
+  'organizations.json': orgs, 'users.json': users, 'auth-accounts.json': accounts,
+  'drivers.json': [
+    { id: 'driver_a', organizationId: 'fleet_a', userId: 'driver_user', name: 'Driver User', phone: '1111111111', assignedTruckId: 'truck_a', status: 'AVAILABLE', createdAt: now },
+    { id: 'driver_other_profile', organizationId: 'fleet_a', userId: 'driver_other', name: 'Other Driver', phone: '2222222222', assignedTruckId: 'truck_other', status: 'AVAILABLE', createdAt: now },
+  ],
+  'trucks.json': [
+    { id: 'truck_a', organizationId: 'fleet_a', registrationNo: 'KA01AA0001', capacityT: 5, availableT: 5, status: 'AVAILABLE', lat: 12.9, lng: 77.6, origin: 'A', destination: 'B', departureAt: null, driverId: 'driver_a', createdAt: now },
+    { id: 'truck_other', organizationId: 'fleet_a', registrationNo: 'KA01AA0002', capacityT: 5, availableT: 5, status: 'AVAILABLE', lat: 12.9, lng: 77.6, origin: 'C', destination: 'D', departureAt: null, driverId: 'driver_other_profile', createdAt: now },
+  ], 'shipments.json': shipments,
+  'capacity-offers.json': [
+    { id: 'offer_a', truckId: 'truck_a', availableT: 5, route: 'A → B', origin: 'A', destination: 'B', pricePerT: 100, departureAt: null, status: 'OPEN', createdAt: now, updatedAt: now },
+    { id: 'offer_other', truckId: 'truck_other', availableT: 5, route: 'C → D', origin: 'C', destination: 'D', pricePerT: 100, departureAt: null, status: 'OPEN', createdAt: now, updatedAt: now },
+  ], 'incidents.json': [], 'recovery-plans.json': [],
+  'payments.json': [], 'shipment-events.json': [], 'notifications.json': [],
+})) {
+  await writeFile(join(dataDir, name), JSON.stringify(rows), 'utf8');
+}
+
+let server: ChildProcess | undefined;
+async function waitForServer(): Promise<void> {
+  for (let i = 0; i < 40; i++) {
+    try {
+      const response = await fetch(`${base}/health`);
+      if (response.ok) return;
+    } catch { /* server is still starting */ }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error('Authentication integration server did not start.');
+}
+async function request(path: string, init: RequestInit = {}) {
+  return fetch(`${base}${path}`, init);
+}
+
+try {
+  server = spawn('npx', ['tsx', 'src/index.ts'], {
+    cwd: new URL('..', import.meta.url).pathname,
+    env: {
+      ...process.env, PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir,
+      AUTO_SEED: 'false', NODE_ENV: 'test', FLEETGRID_TEST_BYPASS_AUTH: 'false',
+      CORS_ORIGIN: base, APP_BASE_URL: '',
+    },
+    stdio: 'ignore',
+  });
+  await waitForServer();
+
+  const anonymous = await request('/state');
+  assert.equal(anonymous.status, 401, 'operational state requires a session');
+  const verificationPrefetch = await request(`/auth/verify-email?token=${encodeURIComponent(verificationToken.token)}`);
+  assert.equal(verificationPrefetch.status, 401, 'a GET link prefetch cannot consume an email verification token');
+  const explicitVerification = await request('/auth/verify-email', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: verificationToken.token }),
+  });
+  assert.equal(explicitVerification.status, 200, 'email verification succeeds only after explicit POST');
+  const verificationReplay = await request('/auth/verify-email', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: verificationToken.token }),
+  });
+  assert.equal(verificationReplay.status, 400, 'email verification token is single use');
+
+  const suspendedState = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenSuspended.token}` } });
+  assert.equal(suspendedState.status, 403, 'suspended organisations cannot access operational APIs');
+  const suspendedSession = await request('/auth/me', { headers: { cookie: `fleetgrid_session=${tokenSuspended.token}` } });
+  assert.equal(suspendedSession.status, 403, 'suspended organisations cannot restore an authenticated session');
+
+
+  const opsSignup = await request('/auth/signup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ role: 'CONTROL_TOWER', name: 'Ops Attempt', email: 'ops@example.test', password, contact: '1234567890' }),
+  });
+  assert.equal(opsSignup.status, 400, 'operations roles cannot self-register');
+
+  const unavailableEmailSignup = await request('/auth/signup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ role: 'BUSINESS', name: 'Shipper Attempt', email: 'new@example.test', password, contact: '1234567890' }),
+  });
+  assert.equal(unavailableEmailSignup.status, 503, 'signup is unavailable without configured email delivery');
+  const storedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
+  assert.equal(storedAccounts.length, 5, 'rejected signup attempts must not create auth accounts');
+  const resendPayload = { email: 'verify-limit@example.test' };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const resend = await request('/auth/resend-verification', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(resendPayload),
+    });
+    assert.equal(resend.status, 503, 'email resend reports missing provider before rate limit is reached');
+  }
+  const limitedResend = await request('/auth/resend-verification', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(resendPayload),
+  });
+  assert.equal(limitedResend.status, 429, 'repeated verification email requests are rate limited per account');
+  assert.ok(Number(limitedResend.headers.get('retry-after')) > 0, 'rate-limited response includes Retry-After');
+
+
+  const invalidLogin = await request('/auth/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'a@example.test', password: 'incorrect-password' }),
+  });
+  assert.equal(invalidLogin.status, 401, 'incorrect password is rejected');
+
+  const meAnonymous = await request('/auth/me');
+  assert.equal(meAnonymous.status, 401, 'session endpoint rejects anonymous callers');
+
+  const shipperA = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  assert.equal(shipperA.status, 200);
+  const stateA = await shipperA.json() as { shipments: Array<{ id: string }>; users: Array<{ id: string }>; trucks: Array<{ driverId: string | null }> };
+  assert.deepEqual(stateA.shipments.map((s) => s.id), ['shipment_a'], 'shipper sees only their own shipments');
+  assert.deepEqual(stateA.users.map((u) => u.id), ['user_a'], 'shipper sees only their own organization users');
+  assert.ok(stateA.trucks.every((truck) => truck.driverId === null), 'shipper snapshot does not expose private driver account links');
+
+  const shipperB = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenB.token}` } });
+  const stateB = await shipperB.json() as { shipments: Array<{ id: string }> };
+  assert.deepEqual(stateB.shipments.map((s) => s.id), ['shipment_b', 'shipment_zero_price', 'shipment_bad_currency'], 'second shipper sees only its own shipments, including payment-validation fixtures');
+
+  const crossShipperDetail = await request('/shipments/shipment_b', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  assert.equal(crossShipperDetail.status, 404, 'shipper cannot open another shipper shipment by ID');
+
+  const driverCrossShipperDetail = await request('/shipments/shipment_a', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(driverCrossShipperDetail.status, 404, 'driver cannot open an unassigned shipment by ID');
+  const driverStateResponse = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(driverStateResponse.status, 200);
+  const driverState = await driverStateResponse.json() as { users: Array<{ id: string }>; drivers: Array<{ id: string }>; trucks: Array<{ id: string }> };
+  assert.deepEqual(driverState.users.map((u) => u.id), ['driver_user'], 'driver cannot see another driver account in the same fleet organization');
+  assert.deepEqual(driverState.drivers.map((d) => d.id), ['driver_a'], 'driver sees only their own driver profile');
+  assert.deepEqual(driverState.trucks.map((t) => t.id), ['truck_a'], 'driver sees only their assigned truck in private state');
+  const driverTruckListResponse = await request('/trucks', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  const driverTruckList = await driverTruckListResponse.json() as { trucks: Array<{ id: string }> };
+  assert.deepEqual(driverTruckList.trucks.map((truck) => truck.id), ['truck_a'], 'driver cannot enumerate other drivers trucks through the truck list');
+  const driverLocationsResponse = await request('/trucks/locations', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  const driverLocations = await driverLocationsResponse.json() as Array<{ id: string }>;
+  assert.deepEqual(driverLocations.map((truck) => truck.id), ['truck_a'], 'driver live map is limited to their assigned truck');
+  const otherDriverTruckDetail = await request('/trucks/truck_other', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(otherDriverTruckDetail.status, 404, 'driver cannot open another drivers truck detail');
+  const driverCapacityBrowse = await request('/capacity', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(driverCapacityBrowse.status, 403, 'drivers cannot browse other fleets capacity and driver listings');
+
+  const shipperCapacity = await request('/capacity', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  assert.equal(shipperCapacity.status, 200);
+  const shipperCapacityData = await shipperCapacity.json() as { matches: Array<{ truck: { driverId: string | null }; driverName: string | null }> };
+  assert.ok(shipperCapacityData.matches.length > 0, 'shipper can browse public fleet capacity');
+  assert.ok(shipperCapacityData.matches.every((match) => match.truck.driverId === null && match.driverName === null), 'capacity search hides driver identifiers and names from shippers');
+
+  const shipperCapacityOptions = await request('/capacity/options?weightT=1', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const capacityOptionsData = await shipperCapacityOptions.json() as { single: Array<{ truck: { driverId: string | null }; driverName: string | null }> };
+  assert.ok(capacityOptionsData.single.every((match) => match.truck.driverId === null && match.driverName === null), 'capacity options hide driver identity');
+
+  const shipperNearby = await request('/capacity/nearby?truckId=truck_a&weightT=1', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const nearbyData = await shipperNearby.json() as { selected: { truck: { driverId: string | null }; driverName: string | null } | null; suggestions: Array<{ truck: { driverId: string | null }; driverName: string | null }>; selectedTruck: { driverId: string | null } | null };
+  assert.equal(nearbyData.selected?.truck.driverId, null, 'nearby selected truck hides driver identifier');
+  assert.equal(nearbyData.selected?.driverName, null, 'nearby selected truck hides driver name');
+  assert.ok(nearbyData.suggestions.every((match) => match.truck.driverId === null && match.driverName === null), 'nearby suggestions hide driver identity');
+  assert.equal(nearbyData.selectedTruck?.driverId, null, 'nearby selected truck summary hides driver identifier');
+
+  const shipperCapacityDetail = await request('/capacity/offer_other', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const capacityDetailData = await shipperCapacityDetail.json() as { truck: { driverId: string | null } };
+  assert.equal(capacityDetailData.truck.driverId, null, 'capacity detail hides driver identifier');
+
+  const shipperReservation = await request('/capacity/offer_other/reserve', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_b' }),
+  });
+  assert.equal(shipperReservation.status, 200, 'shipper can reserve an available public capacity offer for its own shipment');
+  const reservationData = await shipperReservation.json() as { truck: { driverId: string | null } };
+  assert.equal(reservationData.truck.driverId, null, 'capacity reservation response hides driver identifier from shipper');
+
+  const shipperOtherTruckDetail = await request('/trucks/truck_other', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const shipperOtherTruck = await shipperOtherTruckDetail.json() as { truck: { driverId: string | null }; driver: unknown };
+  assert.equal(shipperOtherTruck.truck.driverId, null, 'shipper cannot read another fleets private driver link');
+  assert.equal(shipperOtherTruck.driver, null, 'shipper cannot read another fleets driver profile');
+
+
+  const driverRecoveryWrite = await request('/recovery-plans', {
+    method: 'POST', headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ incidentId: 'incident_private' }),
+  });
+  assert.equal(driverRecoveryWrite.status, 403, 'driver cannot create operations recovery plans');
+  const driverRecoveryPreview = await request('/incidents/incident_private/recovery-options', {
+    headers: { cookie: `fleetgrid_session=${tokenDriver.token}` },
+  });
+  assert.equal(driverRecoveryPreview.status, 403, 'drivers cannot inspect operations-only recovery previews');
+
+  const driverEventWrite = await request('/events', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ eventType: 'shipment.fake_paid', shipmentId: 'shipment_a', payload: { status: 'PAID' } }),
+  });
+  assert.equal(driverEventWrite.status, 403, 'drivers cannot append arbitrary events to the immutable audit log');
+  const shipperEventWrite = await request('/events', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ eventType: 'shipment.fake_paid', shipmentId: 'shipment_a', payload: { status: 'PAID' } }),
+  });
+  assert.equal(shipperEventWrite.status, 403, 'shippers cannot append arbitrary events to the immutable audit log');
+
+
+  const driverPaymentIntent = await request('/payments/dodo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR' }),
+  });
+  assert.equal(driverPaymentIntent.status, 410, 'Dodo shipment checkout is disabled for every role');
+
+  const dodoStatus = await request('/payments/dodo/status', {
+    headers: { cookie: `fleetgrid_session=${tokenB.token}` },
+  });
+  assert.equal(dodoStatus.status, 410, 'Dodo readiness endpoint is retired');
+
+  const shipperDodoCheckout = await request('/payments/dodo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 100, currency: 'INR' }),
+  });
+  assert.equal(shipperDodoCheckout.status, 410, 'Dodo cannot initiate a real shipment payment');
+
+  const browserPaymentConfirm = await request('/payments/dodo/confirm', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ paymentId: 'forged', providerReference: 'forged' }),
+  });
+  assert.equal(browserPaymentConfirm.status, 410, 'Dodo browser confirmation is disabled');
+
+  const disabledDodoWebhook = await request('/payments/dodo/webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'payment.succeeded', data: {} }),
+  });
+  assert.equal(disabledDodoWebhook.status, 410, 'Dodo webhook cannot settle FleetGrid payments');
+
+  const paymentsAfterDisabledProvider = await request('/payments', {
+    headers: { cookie: `fleetgrid_session=${tokenA.token}` },
+  });
+  const paymentsAfterDisabledProviderBody = await paymentsAfterDisabledProvider.json() as { payments: unknown[] };
+  assert.equal(paymentsAfterDisabledProviderBody.payments.length, 0, 'disabled Dodo requests create no payment records');
+
+  const demoPaymentStatus = await request('/payments/demo/status', {
+    headers: { cookie: `fleetgrid_session=${tokenA.token}` },
+  });
+  assert.equal(demoPaymentStatus.status, 200, 'authenticated shipper can read demo payment readiness');
+  const demoStatusBody = await demoPaymentStatus.json() as { mode: string; realMoney: boolean; ready: boolean };
+  assert.deepEqual(demoStatusBody, {
+    provider: 'FleetGrid Demo Simulator', mode: 'DEMO_ONLY', realMoney: false, ready: true,
+  }, 'payment readiness clearly states that no real money is moved');
+
+  const driverDemoCheckout = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenDriver.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(driverDemoCheckout.status, 403, 'drivers cannot initiate shipper demo payments');
+
+  const crossShipperDemoCheckout = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(crossShipperDemoCheckout.status, 404, 'a shipper cannot create a payment for another shipper shipment');
+
+  const draftShipmentPayment = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_b' }),
+  });
+  assert.equal(draftShipmentPayment.status, 409, 'payment cannot start before driver confirmation');
+
+  const zeroPricePayment = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_zero_price' }),
+  });
+  assert.equal(zeroPricePayment.status, 400, 'zero-priced shipments cannot be paid');
+
+  const invalidCurrencyPayment = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_bad_currency' }),
+  });
+  assert.equal(invalidCurrencyPayment.status, 400, 'shipments with invalid currency cannot be paid');
+
+  const demoCheckout = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    // Deliberately spoof client amount/currency: the server must use shipment_a's stored INR 100.
+    body: JSON.stringify({ shipmentId: 'shipment_a', amount: 1, currency: 'USD' }),
+  });
+  assert.equal(demoCheckout.status, 201, 'owner can create a demo payment for a confirmed shipment');
+  const demoCheckoutBody = await demoCheckout.json() as {
+    payment: { id: string; provider: string; amount: number; currency: string; status: string; paymentMethod: string };
+    mode: string; realMoney: boolean;
+  };
+  assert.equal(demoCheckoutBody.mode, 'DEMO_ONLY');
+  assert.equal(demoCheckoutBody.realMoney, false);
+  assert.equal(demoCheckoutBody.payment.provider, 'FleetGrid Demo Simulator');
+  assert.equal(demoCheckoutBody.payment.amount, 100, 'server ignores spoofed client amount and uses stored shipment price');
+  assert.equal(demoCheckoutBody.payment.currency, 'INR', 'server ignores spoofed client currency and uses stored shipment currency');
+  assert.equal(demoCheckoutBody.payment.status, 'PENDING', 'new demo payment starts pending');
+  assert.equal(demoCheckoutBody.payment.paymentMethod, 'DEMO_SIMULATOR');
+
+  const duplicateDemoCheckout = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(duplicateDemoCheckout.status, 409, 'duplicate active demo checkouts are prevented');
+
+  const crossShipperDemoSettle = await request(`/payments/demo/${demoCheckoutBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenB.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(crossShipperDemoSettle.status, 404, 'another shipper cannot settle the payment');
+
+  const demoSettle = await request(`/payments/demo/${demoCheckoutBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(demoSettle.status, 200, 'owner can explicitly simulate settlement');
+  const demoSettleBody = await demoSettle.json() as {
+    payment: { id: string; status: string; paymentMethod: string };
+    mode: string; realMoney: boolean;
+  };
+  assert.equal(demoSettleBody.payment.status, 'PAID');
+  assert.equal(demoSettleBody.payment.paymentMethod, 'DEMO_SIMULATED');
+  assert.equal(demoSettleBody.mode, 'DEMO_ONLY');
+  assert.equal(demoSettleBody.realMoney, false);
+
+  const repeatedDemoSettle = await request(`/payments/demo/${demoCheckoutBody.payment.id}/settle`, {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(repeatedDemoSettle.status, 200, 'repeated demo settlement is idempotent');
+  const repeatedDemoSettleBody = await repeatedDemoSettle.json() as { payment: { id: string; status: string } };
+  assert.equal(repeatedDemoSettleBody.payment.id, demoCheckoutBody.payment.id);
+  assert.equal(repeatedDemoSettleBody.payment.status, 'PAID');
+
+  const secondAfterPaid = await request('/payments/demo/checkout', {
+    method: 'POST',
+    headers: { cookie: `fleetgrid_session=${tokenA.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ shipmentId: 'shipment_a' }),
+  });
+  assert.equal(secondAfterPaid.status, 409, 'a paid shipment cannot be charged again in demo mode');
+
+  const shipperPaymentList = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  const shipperPaymentListBody = await shipperPaymentList.json() as { payments: Array<{ id: string; amount: number }> };
+  assert.equal(shipperPaymentListBody.payments.length, 1, 'shipper can see its own demo payment');
+  assert.equal(shipperPaymentListBody.payments[0].id, demoCheckoutBody.payment.id);
+
+  const crossShipperPaymentRead = await request(`/payments/${demoCheckoutBody.payment.id}`, {
+    headers: { cookie: `fleetgrid_session=${tokenB.token}` },
+  });
+  assert.equal(crossShipperPaymentRead.status, 404, 'another shipper cannot read the payment by ID');
+
+  const paymentTimelineResponse = await request('/shipments/shipment_a/timeline', {
+    headers: { cookie: `fleetgrid_session=${tokenA.token}` },
+  });
+  assert.equal(paymentTimelineResponse.status, 200, 'shipper can inspect its shipment audit timeline');
+  const paymentTimeline = await paymentTimelineResponse.json() as { events: Array<{ eventType: string; actorType: string }> };
+  assert.ok(paymentTimeline.events.some((event) => event.eventType === 'payment.demo_created'), 'demo checkout is recorded in the shipment audit timeline');
+  assert.ok(paymentTimeline.events.some((event) => event.eventType === 'payment.demo_settled' && event.actorType === 'BUSINESS'), 'demo settlement is attributed to the shipper in the audit timeline');
+
+  const driverPayments = await request('/payments', { headers: { cookie: `fleetgrid_session=${tokenDriver.token}` } });
+  assert.equal(driverPayments.status, 200);
+  const paymentData = await driverPayments.json() as { payments: unknown[] };
+  assert.equal(paymentData.payments.length, 0, 'driver cannot read shipper payment records');
+
+  const logout = await request('/auth/logout', { method: 'POST', headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  assert.equal(logout.status, 200);
+  const afterLogout = await request('/state', { headers: { cookie: `fleetgrid_session=${tokenA.token}` } });
+  assert.equal(afterLogout.status, 401, 'logout revokes the server-side session');
+
+  const persistedAccounts = JSON.parse(await readFile(join(dataDir, 'auth-accounts.json'), 'utf8'));
+  assert.equal(persistedAccounts.find((a: { id: string }) => a.id === 'user_a').sessionTokenHash, null);
+
+  process.stdout.write('Authentication integration checks passed (anonymous access, no operations self-registration, failed signup, auth rate limiting, explicit one-time email verification, login rejection, cross-account shipment isolation, driver account and fleet privacy, suspended organisation lockout, recovery preview and immutable event-log restrictions, role restrictions, disabled Dodo route rejection, demo payment amount validation, shipper ownership, duplicate prevention, idempotent simulated settlement, audit events, payment privacy, proof-anchor role restriction, logout).\\n');
+} finally {
+  if (server && !server.killed) server.kill('SIGTERM');
+  await rm(dataDir, { recursive: true, force: true });
+}

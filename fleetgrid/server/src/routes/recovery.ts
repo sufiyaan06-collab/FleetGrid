@@ -1,6 +1,7 @@
 ﻿import { Router } from 'express';
 import { z } from 'zod';
 import {
+  acceptRecoveryPlan,
   approveRecoveryPlan,
   createRecoveryPlan,
   executeRecoveryPlan,
@@ -12,8 +13,32 @@ import {
 import { asyncHandler } from '../middleware/errors.js';
 import { validateBody, validateQuery } from '../middleware/validate.js';
 import { requiredParam } from '../middleware/params.js';
+import { requireRoles } from '../middleware/auth.js';
+import { db } from '../store/db.js';
+import type { User } from '../types.js';
 
 export const recoveryRouter: Router = Router();
+
+// A replacement driver can accept only the recovery request for their own assigned truck.
+const driverAcceptSchema = z.object({ driverId: z.string().min(2).optional() });
+recoveryRouter.post(
+  '/driver/recovery-plans/:id/accept',
+  requireRoles('DRIVER'),
+  validateBody(driverAcceptSchema),
+  asyncHandler(async (req, res) => {
+    const user = res.locals.authUser as User;
+    const body = req.body as z.infer<typeof driverAcceptSchema>;
+    // Test-only identity shim; production always derives the driver from the signed-in session.
+    const testDriver = process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' && body.driverId
+      ? await db.drivers.findById(body.driverId)
+      : undefined;
+    const plan = await acceptRecoveryPlan(requiredParam(req, 'id'), testDriver?.userId ?? user.id);
+    res.json({ ok: true, plan });
+  }),
+);
+
+// Recovery plans change fleet-wide assignments and require an operations role.
+recoveryRouter.use('/recovery-plans', requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'));
 
 const createPlanSchema = z.object({
   incidentId: z.string().min(2),
@@ -28,6 +53,7 @@ const createPlanSchema = z.object({
  */
 recoveryRouter.post(
   '/recovery-plans',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(createPlanSchema),
   asyncHandler(async (req, res) => {
     const { incidentId } = req.body as z.infer<typeof createPlanSchema>;
@@ -63,6 +89,7 @@ recoveryRouter.get(
 /** GET /incidents/:id/recovery-options — read-only preview, creates nothing. */
 recoveryRouter.get(
   '/incidents/:id/recovery-options',
+  requireRoles('CONTROL_TOWER', 'OPERATOR', 'VERIFIER'),
   asyncHandler(async (req, res) => {
     const { impact, options } = await findRecoveryOptions(requiredParam(req, 'id'));
     res.json({ impact, options, engine: 'DETERMINISTIC_PLACEHOLDER' });
@@ -75,10 +102,11 @@ const approveSchema = z.object({
 
 recoveryRouter.post(
   '/recovery-plans/:id/approve',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(approveSchema),
   asyncHandler(async (req, res) => {
     const { approvedBy } = req.body as z.infer<typeof approveSchema>;
-    const plan = await approveRecoveryPlan(requiredParam(req, 'id'), approvedBy ?? 'operator_demo');
+    const plan = await approveRecoveryPlan(requiredParam(req, 'id'), process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? approvedBy ?? 'operator_demo' : (res.locals.authUser as { id: string }).id);
     res.json({ ok: true, plan });
   }),
 );
@@ -90,10 +118,11 @@ const rejectSchema = z.object({
 
 recoveryRouter.post(
   '/recovery-plans/:id/reject',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(rejectSchema),
   asyncHandler(async (req, res) => {
     const { rejectedBy, reason } = req.body as z.infer<typeof rejectSchema>;
-    const plan = await rejectRecoveryPlan(requiredParam(req, 'id'), rejectedBy ?? 'operator_demo', reason);
+    const plan = await rejectRecoveryPlan(requiredParam(req, 'id'), process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? rejectedBy ?? 'operator_demo' : (res.locals.authUser as { id: string }).id, reason);
     res.json({ ok: true, plan });
   }),
 );
@@ -104,10 +133,11 @@ const executeSchema = z.object({
 
 recoveryRouter.post(
   '/recovery-plans/:id/execute',
+  requireRoles('CONTROL_TOWER', 'OPERATOR'),
   validateBody(executeSchema),
   asyncHandler(async (req, res) => {
     const { executedBy } = req.body as z.infer<typeof executeSchema>;
-    const result = await executeRecoveryPlan(requiredParam(req, 'id'), executedBy ?? 'operator_demo');
+    const result = await executeRecoveryPlan(requiredParam(req, 'id'), process.env.FLEETGRID_TEST_BYPASS_AUTH === 'true' ? executedBy ?? 'operator_demo' : (res.locals.authUser as { id: string }).id);
     res.json({ ok: true, ...result });
   }),
 );

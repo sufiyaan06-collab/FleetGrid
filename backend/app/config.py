@@ -8,6 +8,10 @@ class Settings:
     PROJECT_NAME: str = "FleetGrid API"
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    LEGACY_API_ENABLED: bool = os.getenv(
+        "LEGACY_API_ENABLED",
+        "false" if ENVIRONMENT.strip().lower() in {"production", "prod"} else "true",
+    ).strip().lower() == "true"
     PORT: int = int(os.getenv("PORT", 8000))
     HOST: str = os.getenv("HOST", "0.0.0.0")
 
@@ -36,10 +40,6 @@ class Settings:
     ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
     ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "")
     ELEVENLABS_AGENT_ID: str = os.getenv("ELEVENLABS_AGENT_ID", "")
-
-    # Dodo Payments
-    DODO_PAYMENTS_API_KEY: str = os.getenv("DODO_PAYMENTS_API_KEY", "")
-    DODO_WEBHOOK_SECRET: str = os.getenv("DODO_WEBHOOK_SECRET", "")
 
     # EVM Blockchain (Proof Anchoring)
     EVM_RPC_URL: str = os.getenv("EVM_RPC_URL", "")

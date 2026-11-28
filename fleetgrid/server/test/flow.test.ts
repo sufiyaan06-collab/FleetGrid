@@ -469,7 +469,7 @@ async function main(): Promise<void> {
     !options.body.options.some((o: any) => o.truckId === 'FG-027'));
 
   const plan = await api('/recovery-plans', { method: 'POST', body: JSON.stringify({ incidentId }) });
-  check('POST /recovery-plans returns 201', plan.status === 201, plan.body);
+  check('POST /recovery-plans returns the already-prepared proposal', plan.status === 200 || plan.status === 201, plan.body);
   const planId = plan.body.plan?.id as string;
   check('Plan is PENDING_APPROVAL', plan.body.plan?.status === 'PENDING_APPROVAL', plan.body.plan);
   check('Plan selected FG-041 (fastest compatible)', plan.body.plan?.selectedTruckId === 'FG-041', plan.body.plan);
@@ -486,6 +486,14 @@ async function main(): Promise<void> {
     body: JSON.stringify({ approvedBy: 'operator_demo' }),
   });
   check('Approve moves plan to APPROVED', approved.body.plan?.status === 'APPROVED', approved.body);
+
+  const recoveryState = await api('/state');
+  const replacementDriver = recoveryState.body.drivers.find((d: any) => d.assignedTruckId === 'FG-041');
+  const recoveryAccepted = await api(`/driver/recovery-plans/${planId}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ driverId: replacementDriver?.id }),
+  });
+  check('Only the selected replacement driver can accept the handover', recoveryAccepted.status === 200 && recoveryAccepted.body.plan?.driverAcceptedBy === replacementDriver?.id, recoveryAccepted.body);
 
   const executed = await api(`/recovery-plans/${planId}/execute`, {
     method: 'POST',
@@ -505,13 +513,21 @@ async function main(): Promise<void> {
   const finalState = await api('/state');
   const finalTruck027 = finalState.body.trucks.find((t: any) => t.id === 'FG-027');
   const finalTruck041 = finalState.body.trucks.find((t: any) => t.id === 'FG-041');
-    check('FG-027 recovered its 1T → 3.8T spare and returned to service',
-      finalTruck027?.availableT === 3.8 && finalTruck027?.status === 'AVAILABLE', finalTruck027);
+    check('FG-027 remains out of service in RECOVERY until repair is confirmed',
+      finalTruck027?.availableT === 3.8 && finalTruck027?.status === 'RECOVERY', finalTruck027);
     const finalDriver027 = finalState.body.drivers.find((d: any) => d.assignedTruckId === 'FG-027');
-    check('FG-027 driver released back to AVAILABLE',
-      finalDriver027?.status === 'AVAILABLE', finalDriver027);
+    check('Breakdown driver remains marked INCIDENT_REPORTED pending roadside assistance',
+      finalDriver027?.status === 'INCIDENT_REPORTED', finalDriver027);
   check('FG-041 spent 1.0T → 2.1T spare', finalTruck041?.availableT === 2.1, finalTruck041);
-  check('Incident resolved', finalState.body.incidents.find((i: any) => i.id === incidentId)?.status === 'RESOLVED');
+  check('Shipment recovery completes while the disabled-vehicle incident remains open for repair',
+    finalState.body.incidents.find((i: any) => i.id === incidentId)?.status === 'PLAN_READY');
+
+  const repairConfirmed = await api(`/incidents/${incidentId}/repair-confirmed`, { method: 'POST', body: JSON.stringify({}) });
+  check('Control Tower can confirm repair and return the original vehicle to service', repairConfirmed.status === 200 && repairConfirmed.body.truck?.status === 'AVAILABLE', repairConfirmed.body);
+  const afterRepair = await api('/state');
+  check('Repair confirmation closes the incident', afterRepair.body.incidents.find((i: any) => i.id === incidentId)?.status === 'RESOLVED');
+  check('Breakdown driver returns to AVAILABLE only after repair confirmation',
+    afterRepair.body.drivers.find((d: any) => d.assignedTruckId === 'FG-027')?.status === 'AVAILABLE');
 
   section('10. Timeline + proof honesty');
   const timeline = await api(`/shipments/${shipmentId}/timeline`);
@@ -540,7 +556,7 @@ async function main(): Promise<void> {
   section('11. Business confirms delivery');
   const businessEventsBeforeDelivery = business.events.length;
 
-  // The recovered shipment is aboard FG-041, which recovery execution left ASSIGNED.
+  // The recovered shipment is aboard FG-041, which recovery execution returned to IN_TRANSIT.
   const deliver = await api(`/shipments/${shipmentId}/confirm-delivery`, {
     method: 'POST',
     body: JSON.stringify({ actorId: demoLogin.body.user.id }),
@@ -548,9 +564,7 @@ async function main(): Promise<void> {
   check('POST /shipments/:id/confirm-delivery succeeds', deliver.status === 200, deliver.body);
   check('Shipment is DELIVERED', deliver.body.shipment?.status === 'DELIVERED', deliver.body.shipment);
   check('Shipment stayed on the recovered truck FG-041', deliver.body.shipment?.truckId === 'FG-041', deliver.body.shipment);
-  check('FG-041 is not forced to DELIVERED from ASSIGNED', deliver.body.truck?.status === 'ASSIGNED' && deliver.body.truckCompleted === false, deliver.body.truck);
-  check('The response explains why the truck did not complete',
-    String(deliver.body.truckNote ?? '').includes('no ASSIGNED → DELIVERED transition'), deliver.body.truckNote);
+  check('FG-041 completes its journey after the recovered shipment is delivered', deliver.body.truck?.status === 'DELIVERED' && deliver.body.truckCompleted === true, deliver.body.truck);
 
   const deliveredTimeline = await api(`/shipments/${shipmentId}/timeline`);
   const deliveredTypes = deliveredTimeline.body.events.map((e: any) => e.eventType);

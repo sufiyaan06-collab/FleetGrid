@@ -20,7 +20,7 @@ export function EventFeed({ events, limit = 40, filter = 'all', emptyHint }: Eve
   const rows = events
     .filter((e) => (filter === 'agent' ? isAgentEvent(e.eventType) : true))
     .slice()
-    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
+    .sort((a, b) => Date.parse(b.timestamp ?? '') - Date.parse(a.timestamp ?? ''))
     .slice(0, limit);
 
   if (rows.length === 0) {
@@ -53,7 +53,7 @@ export function EventFeed({ events, limit = 40, filter = 'all', emptyHint }: Eve
               </span>
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-ink-500">
-              <span className="uppercase tracking-[0.1em]">{event.actorType.toLowerCase()}</span>
+              <span className="uppercase tracking-[0.1em]">{(event.actorType ?? 'unknown').toLowerCase()}</span>
               {event.truckId && <span className="font-mono">{event.truckId}</span>}
               {event.shipmentId && <span className="font-mono">{event.shipmentId}</span>}
               {event.proofStatus === 'CONFIRMED' && (

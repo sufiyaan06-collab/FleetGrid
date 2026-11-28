@@ -1,4 +1,5 @@
 import { db } from '../store/db.js';
+import { isProductionEnvironment } from '../config.js';
 import { ApiError } from '../lib/errors.js';
 import { nowIso, round } from '../lib/ids.js';
 import { runExclusive } from '../lib/mutex.js';
@@ -6,14 +7,30 @@ import { hub } from './realtime.js';
 import { canonicalLocation, distanceKm, etaLabelFor, proximityLabel, segmentFit, segmentNote, type SegmentFit } from '../lib/geo.js';
 import type { CapacityOffer, Shipment, Truck } from '../types.js';
 
+export type BookableCapacityOffer = CapacityOffer & {
+  origin: string;
+  destination: string;
+  pricePerT: number;
+};
+
+/** Legacy offers with missing route/rate data remain stored but cannot be booked. */
+export function isBookableCapacityOffer(offer: CapacityOffer): offer is BookableCapacityOffer {
+  return Boolean(
+    offer.route?.trim() &&
+    offer.origin?.trim() &&
+    offer.destination?.trim() &&
+    offer.pricePerT !== null &&
+    Number.isFinite(offer.pricePerT) &&
+    offer.pricePerT > 0
+  );
+}
+
 export interface CapacitySearchInput {
   origin?: string;
   destination?: string;
   weightT?: number;
   minAvailableT?: number;
 }
-
-type BookableCapacityOffer = CapacityOffer & { origin: string; destination: string; pricePerT: number };
 
 export interface CapacityMatch {
   offer: BookableCapacityOffer;
@@ -51,7 +68,7 @@ export async function syncOfferForTruck(truck: Truck, status?: CapacityOffer['st
   const nextStatus: CapacityOffer['status'] = status ?? (current.status === 'CLOSED' ? 'CLOSED' : truck.availableT > 0 ? 'OPEN' : 'HELD');
   const updated = await db.capacityOffers.update(current.id, {
     availableT: round(truck.availableT),
-    route: `${truck.origin} → ${truck.destination}`,
+    route: truck.origin?.trim() && truck.destination?.trim() ? `${truck.origin} → ${truck.destination}` : null,
     origin: truck.origin,
     destination: truck.destination,
     status: nextStatus,
@@ -67,11 +84,15 @@ export async function syncOfferForTruck(truck: Truck, status?: CapacityOffer['st
  * A truck is a candidate when it still has spare tonnage and is not blocked.
  */
 export async function searchCapacity(input: CapacitySearchInput): Promise<CapacityMatch[]> {
-  const [offers, trucks, drivers] = await Promise.all([
+  const [offers, trucks, drivers, users, organizations, authAccounts] = await Promise.all([
     db.capacityOffers.get(),
     db.trucks.get(),
     db.drivers.get(),
+    db.users.get(),
+    db.organizations.get(),
+    db.authAccounts.get(),
   ]);
+  const production = isProductionEnvironment();
 
   const origin = input.origin ? canonicalLocation(input.origin) : null;
   const destination = input.destination ? canonicalLocation(input.destination) : null;
@@ -80,10 +101,39 @@ export async function searchCapacity(input: CapacitySearchInput): Promise<Capaci
   const matches: CapacityMatch[] = [];
 
   for (const offer of offers) {
-    // Incomplete legacy offers remain stored but are not bookable until their route and price are known.
-    if (!offer.origin || !offer.destination || offer.pricePerT == null || !Number.isFinite(offer.pricePerT)) continue;
+    if (!isBookableCapacityOffer(offer)) continue;
     const truck = trucks.find((t) => t.id === offer.truckId);
     if (!truck) continue;
+
+    // Capacity is only marketable when a real, active driver is linked to this
+    // truck and the driver, user, and fleet operator all agree on ownership.
+    // In production, the driver's own credential account must also be verified;
+    // imported legacy/demo identities are not eligible to receive live requests.
+    const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
+    if (!driver || driver.status !== 'AVAILABLE' || driver.assignedTruckId !== truck.id) continue;
+
+    const driverUser = users.find(
+      (user) =>
+        user.id === driver.userId &&
+        user.role === 'DRIVER' &&
+        user.organizationId === truck.organizationId,
+    );
+    if (!driverUser || driver.organizationId !== truck.organizationId) continue;
+
+    const operator = organizations.find(
+      (organization) =>
+        organization.id === truck.organizationId &&
+        organization.type === 'FLEET_OPERATOR' &&
+        organization.status === 'ACTIVE',
+    );
+    if (!operator) continue;
+
+    if (
+      production &&
+      !authAccounts.some((account) => account.id === driver.userId && Boolean(account.emailVerifiedAt))
+    ) {
+      continue;
+    }
 
     const blockers: string[] = [];
     if (offer.status === 'CLOSED') blockers.push('Capacity offer is closed');
@@ -91,8 +141,6 @@ export async function searchCapacity(input: CapacitySearchInput): Promise<Capaci
       blockers.push(`Truck is ${truck.status.replace('_', ' ').toLowerCase()}`);
     }
     if (offer.availableT <= 0) blockers.push('No spare capacity remaining');
-
-    const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
 
     // A truck running the whole lane also passes the intermediate stops, so a
     // Bengaluru → Hosur request is legitimately served by a Bengaluru → Chennai truck.
@@ -157,7 +205,7 @@ export async function findAvailableCapacity(input: CapacitySearchInput): Promise
 
 export interface SplitLeg {
   truck: Truck;
-  offer: CapacityOffer;
+  offer: BookableCapacityOffer;
   /** How much of the request this truck is being asked to carry. */
   assignedT: number;
   /** What is left on the truck after this leg. */
@@ -254,8 +302,8 @@ export async function capacityOptions(input: CapacitySearchInput): Promise<Capac
     if (usableForSplit.length === 0) {
       const offRoute = all.length === 0;
       impossible = offRoute
-        ? `No truck publishes capacity on this network right now.`
-        : `No truck covers ${request.origin ?? 'this pickup'} → ${request.destination ?? 'this drop'} with any spare capacity.`;
+        ? 'No bookable truck has a complete route and valid published rate on this network right now.'
+        : `No bookable truck covers ${request.origin ?? 'this pickup'} → ${request.destination ?? 'this drop'} with any spare capacity.`;
     } else {
       impossible = `Together the ${usableForSplit.length} truck(s) on this route only have ${round(
         usableForSplit.reduce((s, m) => s + m.truck.availableT, 0),
@@ -308,8 +356,7 @@ export async function suggestNearbyCapacity(input: {
 
   const selectedTruck = trucks.find((t) => t.id === input.truckId) ?? null;
 
-  const decorate = (offer: CapacityOffer): CapacityMatch | null => {
-    if (!offer.origin || !offer.destination || offer.pricePerT == null || !Number.isFinite(offer.pricePerT)) return null;
+  const decorate = (offer: BookableCapacityOffer): CapacityMatch | null => {
     const truck = trucks.find((t) => t.id === offer.truckId);
     if (!truck) return null;
     const driver = truck.driverId ? drivers.find((d) => d.id === truck.driverId) : undefined;
@@ -349,10 +396,11 @@ export async function suggestNearbyCapacity(input: {
     };
   };
 
-  const selectedOffer = offers.find((o) => o.truckId === input.truckId) ?? null;
+  const selectedOffer = offers.find((offer): offer is BookableCapacityOffer => offer.truckId === input.truckId && isBookableCapacityOffer(offer)) ?? null;
   const selected = selectedOffer ? decorate(selectedOffer) : null;
 
   const suggestions: NearbySuggestion[] = offers
+    .filter(isBookableCapacityOffer)
     .filter((o) => o.truckId !== input.truckId)
     .map(decorate)
     .filter((m): m is CapacityMatch => m !== null)
@@ -365,14 +413,15 @@ export async function suggestNearbyCapacity(input: {
         canAlsoCarry: input.weightT ? m.truck.availableT >= input.weightT : true,
       };
     })
-    // Genuinely usable first, then nearest — the driver-helpful ordering.
+    // Keep suggestions in true proximity order; compatibility blockers remain
+    // visible on each option so the user can distinguish nearby but unusable trucks.
     .sort((a, b) => {
-      const aBlocked = a.blockers.length > 0;
-      const bBlocked = b.blockers.length > 0;
-      if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
       const ad = a.distanceFromSelectedKm ?? Number.POSITIVE_INFINITY;
       const bd = b.distanceFromSelectedKm ?? Number.POSITIVE_INFINITY;
       if (ad !== bd) return ad - bd;
+      const aBlocked = a.blockers.length > 0;
+      const bBlocked = b.blockers.length > 0;
+      if (aBlocked !== bBlocked) return aBlocked ? 1 : -1;
       return b.truck.availableT - a.truck.availableT;
     })
     .slice(0, input.limit ?? 5);

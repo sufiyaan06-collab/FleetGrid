@@ -61,7 +61,7 @@ export type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type CapacityOfferStatus = 'OPEN' | 'HELD' | 'CLOSED';
 
 /** Master PRD §9 — proof must never be faked. `NOT_ANCHORED` is the honest pre-anchor state. */
-export type ProofStatus = 'NOT_ANCHORED' | 'PENDING' | 'CONFIRMED' | 'FAILED';
+export type ProofStatus = 'NOT_ANCHORED' | 'PENDING' | 'CONFIRMED' | 'FAILED' | 'FALLBACK_RECORDED';
 
 export type ActorType = 'SYSTEM' | 'AGENT' | 'OPERATOR' | 'DRIVER' | 'BUSINESS';
 
@@ -70,7 +70,25 @@ export interface Organization {
   name: string;
   type: OrganizationType;
   status: OrganizationStatus;
+  createdAt: string | null;
+}
+
+/** Private authentication record. Never include this collection in API snapshots. */
+export interface AuthAccount {
+  id: string;
+  email: string;
+  passwordHash: string;
+  emailVerifiedAt: string | null;
+  verificationTokenHash: string | null;
+  verificationExpiresAt: string | null;
+  passwordResetTokenHash?: string | null;
+  passwordResetExpiresAt?: string | null;
+  sessionTokenHash: string | null;
+  sessionExpiresAt: string | null;
+  failedLoginCount: number;
+  lockedUntil: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface User {
@@ -78,8 +96,8 @@ export interface User {
   name: string;
   role: Role;
   organizationId: string;
-  contact: string;
-  createdAt: string;
+  contact: string | null;
+  createdAt: string | null;
 }
 
 export interface Driver {
@@ -87,10 +105,10 @@ export interface Driver {
   organizationId: string;
   userId: string;
   name: string;
-  phone: string;
+  phone: string | null;
   assignedTruckId: string | null;
-  status: 'AVAILABLE' | 'ON_JOURNEY' | 'OFF_DUTY';
-  createdAt: string;
+  status: 'AVAILABLE' | 'ON_JOURNEY' | 'OFF_DUTY' | 'INCIDENT_REPORTED';
+  createdAt: string | null;
 }
 
 export interface Truck {
@@ -100,21 +118,23 @@ export interface Truck {
   capacityT: number;
   availableT: number;
   status: TruckStatus;
-  lat: number;
-  lng: number;
-  speedKmph?: number;
-  heading?: number;
-  origin: string;
-  destination: string;
+  lat: number | null;
+  lng: number | null;
+  speedKmph?: number | null;
+  heading?: number | null;
+  locationStatus?: string | null;
+  lastLocationUpdate?: string | null;
+  origin: string | null;
+  destination: string | null;
   departureAt: string | null;
   driverId: string | null;
-  createdAt: string;
+  createdAt: string | null;
 }
 
 export interface Shipment {
   id: string;
-  reference: string;
-  cargoName: string;
+  reference: string | null;
+  cargoName: string | null;
   shipperId: string;
   origin: string;
   destination: string;
@@ -123,24 +143,24 @@ export interface Shipment {
   status: ShipmentStatus;
   truckId: string | null;
   capacityOfferId: string | null;
-  price: number;
-  currency: string;
-  createdAt: string;
-  updatedAt: string;
+  price: number | null;
+  currency: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface CapacityOffer {
   id: string;
   truckId: string;
-  route: string;
-  origin: string;
-  destination: string;
+  route: string | null;
+  origin: string | null;
+  destination: string | null;
   availableT: number;
   departureAt: string | null;
   status: CapacityOfferStatus;
-  priceRule: string;
-  pricePerT: number;
-  updatedAt: string;
+  priceRule: string | null;
+  pricePerT: number | null;
+  updatedAt: string | null;
 }
 
 export interface Incident {
@@ -148,15 +168,15 @@ export interface Incident {
   truckId: string;
   type: IncidentType;
   location: string;
-  severity: Severity;
-  transcript: string;
-  structuredSummary: string;
+  severity: Severity | null;
+  transcript: string | null;
+  structuredSummary: string | null;
   status: IncidentStatus;
-  source: 'DRIVER_APP' | 'VOICE' | 'OPERATOR' | 'SYSTEM';
-  affectedShipmentIds: string[];
+  source: 'DRIVER_APP' | 'VOICE' | 'OPERATOR' | 'SYSTEM' | 'LEGACY_IMPORT';
+  affectedShipmentIds: string[] | null;
   recoveryPlanId: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface ShipmentEvent {
@@ -166,12 +186,12 @@ export interface ShipmentEvent {
   truckId: string | null;
   eventType: string;
   payload: Record<string, unknown>;
-  actorType: ActorType;
+  actorType: ActorType | null;
   actorId: string | null;
-  timestamp: string;
+  timestamp: string | null;
   hash: string;
   blockchainTx: string | null;
-  proofStatus: ProofStatus;
+  proofStatus: ProofStatus | null;
 }
 
 export interface RecoveryOption {
@@ -179,7 +199,7 @@ export interface RecoveryOption {
   availableT: number;
   etaMinutes: number;
   distanceKm: number;
-  cost: number;
+  cost: number | null;
   currency: string;
   compatible: boolean;
   reason: string;
@@ -188,19 +208,22 @@ export interface RecoveryOption {
 export interface RecoveryPlan {
   id: string;
   incidentId: string;
-  affectedShipmentIds: string[];
-  options: RecoveryOption[];
+  affectedShipmentIds: string[] | null;
+  options: RecoveryOption[] | null;
   selectedTruckId: string | null;
-  cost: number;
-  etaDeltaMinutes: number;
+  cost: number | null;
+  etaDeltaMinutes: number | null;
   status: RecoveryPlanStatus;
   approvedBy: string | null;
   approvedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
+  /** The authenticated replacement driver must accept before cargo can be reassigned. */
+  driverAcceptedBy?: string | null;
+  driverAcceptedAt?: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
-/** Placeholder only — real payment provider lands in a later phase (Dodo Payments). */
+/** A FleetGrid payment record. The current UI uses a demo simulator; it is not a real-money settlement. */
 export interface Payment {
   id: string;
   shipmentId: string | null;
@@ -210,6 +233,7 @@ export interface Payment {
   currency: string;
   status: PaymentStatus;
   providerReference: string | null;
+  providerPaymentId?: string | null;
   checkoutUrl?: string | null;
   customerName?: string | null;
   customerEmail?: string | null;
@@ -224,8 +248,8 @@ export interface Notification {
   recipientId: string;
   type: string;
   message: string;
-  status: 'PENDING' | 'SENT';
-  createdAt: string;
+  status: 'PENDING' | 'UNREAD' | 'READ' | 'SENT';
+  createdAt: string | null;
 }
 
 /** Canonical realtime envelope pushed over `WS /realtime`. */

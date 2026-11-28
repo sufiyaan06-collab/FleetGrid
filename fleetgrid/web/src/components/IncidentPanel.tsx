@@ -36,7 +36,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
 
   const live = incidents
     .filter((i) => LIVE_INCIDENT_STATES.has(i.status))
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''));
   const primary = live[0] ?? null;
   // Executing a plan resolves the incident, which would otherwise blank this panel
   // and hide the receipt. Fall back to the newest incident that has a plan so the
@@ -44,7 +44,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
   // so a page reload still shows it.
   const settled = [...incidents]
     .filter((i) => i.recoveryPlanId)
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+    .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? ''))[0];
   const anchor = primary ?? settled ?? null;
   const localPlan = plan && anchor && plan.incidentId === anchor.id ? plan : null;
   const planForIncident = localPlan ?? plans.find((p) => p.incidentId === anchor?.id) ?? null;
@@ -65,6 +65,22 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
     }
   }
 
+  async function recheckCapacity() {
+    if (!anchor) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.createRecoveryPlan(anchor.id);
+      setPlan(res.plan);
+      setOptions(res.options);
+      onAction();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function approve() {
     if (!planForIncident) return;
     setBusy(true);
@@ -72,6 +88,20 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
     try {
       const res = await api.approvePlan(planForIncident.id, operatorId);
       setPlan(res.plan);
+      onAction();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmRepair() {
+    if (!anchor) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.confirmVehicleRepair(anchor.id);
       onAction();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : (err as Error).message);
@@ -107,7 +137,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
   }
 
   const truck = trucks.find((t) => t.id === anchor.truckId);
-  const affected = shipments.filter((s) => anchor.affectedShipmentIds.includes(s.id));
+  const affected = shipments.filter((s) => (anchor.affectedShipmentIds ?? []).includes(s.id));
   const compatible = shownOptions.filter((o) => o.compatible);
   const rejected = shownOptions.filter((o) => !o.compatible);
   const resolved = primary === null;
@@ -143,7 +173,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
                   resolved ? 'text-healthy' : 'text-danger',
                 )}
               >
-                {resolved ? 'Incident Resolved' : 'Incident Detected'}
+                {resolved ? 'Incident Resolved' : planForIncident?.status === 'COMPLETED' ? 'Shipment recovered · vehicle repair pending' : 'Incident Detected'}
               </span>
             </div>
             <div className="mt-2 font-mono text-lg font-semibold tracking-tight text-ink-50">{anchor.truckId}</div>
@@ -159,7 +189,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
 
         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
           <Row label="Location" value={anchor.location} />
-          <Row label="Severity" value={anchor.severity} />
+          <Row label="Severity" value={anchor.severity ?? "Not recorded"} />
           <Row label="Reported" value={formatRelative(anchor.createdAt)} />
           <Row label="Source" value={anchor.source.replace('_', ' ')} />
         </dl>
@@ -259,7 +289,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
                     )}
                   </div>
                   {option.compatible ? (
-                    <span className="tabular text-[11px] text-ink-200">{formatMoney(option.cost, option.currency)}</span>
+                    <span className="tabular text-[11px] text-ink-200">{option.cost == null ? 'Commercial terms to be agreed' : formatMoney(option.cost, option.currency)}</span>
                   ) : (
                     <span className="text-[9px] uppercase tracking-[0.1em] text-ink-500">Incompatible</span>
                   )}
@@ -283,7 +313,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
           <dl className="tabular mt-3 grid grid-cols-2 gap-2 text-[11px]">
             <div className="rounded border border-base-600 bg-base-900/60 px-2.5 py-1.5">
               <dt className="eyebrow">Recovery cost</dt>
-              <dd className="mt-0.5 text-ink-50">{formatMoney(planForIncident.cost)}</dd>
+              <dd className="mt-0.5 text-ink-50">{planForIncident.cost == null ? 'Not recorded' : formatMoney(planForIncident.cost)}</dd>
             </div>
             <div className="rounded border border-base-600 bg-base-900/60 px-2.5 py-1.5">
               <dt className="eyebrow">ETA impact</dt>
@@ -305,7 +335,7 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
                       </div>
                     ))
                   : [
-                      ['shipment', planForIncident.affectedShipmentIds.join(', ') || '—'],
+                      ['shipment', (planForIncident.affectedShipmentIds ?? []).join(', ') || '—'],
                       ['reassigned to', planForIncident.selectedTruckId ?? '—'],
                       ['approved by', planForIncident.approvedBy ?? '—'],
                     ].map(([key, value]) => (
@@ -318,15 +348,26 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
             </div>
           )}
 
+          {primary && planForIncident.status === 'PENDING_APPROVAL' && !planForIncident.selectedTruckId && (
+            <button type="button" className="btn-secondary mt-3 w-full" onClick={recheckCapacity} disabled={busy}>
+              {busy ? 'Checking nearby vehicles…' : 'Recheck nearby vehicles'}
+            </button>
+          )}
+
           <div className="mt-3 flex gap-2">
             {primary && planForIncident.status === 'PENDING_APPROVAL' && (
-              <button type="button" className="btn-primary flex-1" onClick={approve} disabled={busy}>
-                {busy ? 'Approving…' : 'Approve Recovery'}
+              <button type="button" className="btn-primary flex-1" onClick={approve} disabled={busy || !planForIncident.selectedTruckId}>
+                {busy ? 'Approving…' : planForIncident.selectedTruckId ? 'Approve & notify replacement driver' : 'No eligible replacement vehicle'}
               </button>
             )}
-            {primary && planForIncident.status === 'APPROVED' && (
+            {primary && planForIncident.status === 'APPROVED' && !planForIncident.driverAcceptedAt && (
+              <div className="flex-1 rounded-md border border-warn/35 bg-warn/[0.06] px-3 py-2 text-center text-xs text-warn">
+                Waiting for the selected replacement driver to accept. Shipment handover is locked until acceptance.
+              </div>
+            )}
+            {primary && planForIncident.status === 'APPROVED' && planForIncident.driverAcceptedAt && (
               <button type="button" className="btn-primary flex-1" onClick={execute} disabled={busy}>
-                {busy ? 'Executing…' : 'Execute Recovery'}
+                {busy ? 'Executing…' : 'Execute accepted handover'}
               </button>
             )}
             {planForIncident.status === 'COMPLETED' && (
@@ -336,10 +377,18 @@ export function IncidentPanel({ incidents, shipments, trucks, plans, operatorId,
             )}
           </div>
 
+          {planForIncident.status === 'COMPLETED' && anchor.status !== 'RESOLVED' && (
+            <div className="mt-3 rounded-lg border border-warn/35 bg-warn/[0.05] p-3">
+              <p className="text-[11px] leading-relaxed text-ink-300">The shipment has been transferred, but the original truck remains out of service. Only confirm this after a mechanic or authorized operator verifies that the vehicle is safe to drive.</p>
+              <button type="button" className="btn-primary mt-2 w-full" onClick={confirmRepair} disabled={busy}>
+                {busy ? 'Recording repair…' : 'Confirm vehicle repaired & return to service'}
+              </button>
+            </div>
+          )}
+
           <div className="mt-2.5">
             <Placeholder>
-              Payment capture, driver notification delivery and blockchain proof anchoring are phase-2 integrations.
-              Notifications are stored as PENDING, never marked delivered.
+              Recovery requests and in-app driver notifications are recorded in FleetGrid. Physical roadside dispatch, SMS/WhatsApp delivery, live road-routing ETAs and verified physical cargo handover remain external integrations; do not treat demo estimates as guaranteed arrival times.
             </Placeholder>
           </div>
         </div>

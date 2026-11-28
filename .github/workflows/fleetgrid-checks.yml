@@ -1,0 +1,70 @@
+name: FleetGrid checks
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'fleetgrid/**'
+      - 'backend/**'
+      - 'package.json'
+      - 'render.yaml'
+      - '.github/workflows/fleetgrid-checks.yml'
+  push:
+    branches: [main, 'upgrade/**', 'integration/**']
+    paths:
+      - 'fleetgrid/**'
+      - 'backend/**'
+      - 'package.json'
+      - 'render.yaml'
+      - '.github/workflows/fleetgrid-checks.yml'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build frontend and backend
+        run: npm run build
+      - name: Run backend end-to-end tests
+        env:
+          FLEETGRID_TEST_BYPASS_AUTH: 'true'
+        run: |
+          npm run dev --prefix fleetgrid/server > /tmp/fleetgrid-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4000/health; then
+              npm test
+              exit $?
+            fi
+            sleep 2
+          done
+          cat /tmp/fleetgrid-server.log
+          exit 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Python backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Run Python backend tests
+        run: pytest -q backend/tests
+      - name: Run frontend browser integration tests
+        run: |
+          cd fleetgrid/web
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - name: Show API logs on failure
+        if: failure()
+        run: cat /tmp/fleetgrid-server.log || true

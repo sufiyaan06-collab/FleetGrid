@@ -22,8 +22,18 @@ healthRouter.get(
       service: 'fleetgrid-api',
       version: '0.1.0',
       time: nowIso(),
-      storage: 'json-file',
-      dataDir: config.dataDir,
+      storage: db.storage,
+      ...(db.storage === 'json-file' ? { dataDir: config.dataDir } : {}),
+      readiness: {
+        persistentStorage: db.storage === 'postgresql',
+        postgresSchemaApproved: process.env.FLEETGRID_POSTGRES_SCHEMA_READY === 'true',
+        emailDelivery: Boolean(
+          ((process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim())
+            || (process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim()))
+          && process.env.APP_BASE_URL?.trim(),
+        ),
+      },
+      payments: { mode: 'DEMO_ONLY', realMoneyEnabled: false },
       realtime: { path: '/realtime', connectedClients: hub.clientCount() },
       counts: {
         trucks: trucks.length,

@@ -1,41 +1,28 @@
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import cors from 'cors';
 import express from 'express';
 import { config, serverRoot } from './config.js';
+import { db } from './store/db.js';
 import { ensureSeeded } from './services/demo.js';
 import { hub } from './services/realtime.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { buildRouter, ENDPOINT_INDEX } from './routes/index.js';
-
-// Auto-load .env file into process.env
-const envPath = resolve(serverRoot, '.env');
-if (existsSync(envPath)) {
-  try {
-    const lines = readFileSync(envPath, 'utf8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const idx = trimmed.indexOf('=');
-      if (idx > 0) {
-        const key = trimmed.slice(0, idx).trim();
-        const val = trimmed.slice(idx + 1).trim();
-        if (!process.env[key]) {
-          process.env[key] = val;
-        }
-      }
-    }
-  } catch {}
-}
 
 export function createApp(): express.Express {
   const app = express();
 
   app.use(
     cors({
-      origin: config.corsOrigins.includes('*') ? true : config.corsOrigins,
-      credentials: false,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (config.corsOrigins.includes('*') && process.env.NODE_ENV !== 'production') return callback(null, true);
+        if (config.corsOrigins.includes(origin)) return callback(null, true);
+        return callback(null, false);
+      },
+      credentials: true,
     }),
   );
   app.use(express.json({ limit: '256kb' }));
@@ -108,20 +95,46 @@ async function main(): Promise<void> {
   const server = createServer(app);
   hub.attach(server);
 
+  await db.initialize();
+  console.log(`[fleetgrid] storage ${db.storage}`);
+
   const seed = await ensureSeeded();
   if (seed.seeded) {
     console.log(`[fleetgrid] seeded demo data → ${config.dataDir} (${seed.trucks} trucks, ${seed.shipments} shipments)`);
   }
 
+  // Explicitly configured primary administrator promotion. The email must already
+  // belong to a verified credential account; never create credentials or guess an identity.
+  const primaryAdminEmail = process.env.FLEETGRID_PRIMARY_ADMIN_EMAIL?.trim().toLowerCase();
+  if (primaryAdminEmail) {
+    const accounts = await db.authAccounts.find((account) => account.email.toLowerCase() === primaryAdminEmail && Boolean(account.emailVerifiedAt));
+    if (accounts.length !== 1 || !accounts[0]) {
+      throw new Error('[fleetgrid] primary admin promotion requires exactly one existing verified auth account.');
+    }
+    const verifiedAccount = accounts[0];
+    const adminUser = await db.users.findById(verifiedAccount.id);
+    if (!adminUser) throw new Error('[fleetgrid] primary admin auth account has no matching FleetGrid user.');
+    const adminOrg = await db.organizations.findById(adminUser.organizationId);
+    if (!adminOrg || adminOrg.status !== 'ACTIVE') {
+      throw new Error('[fleetgrid] primary admin organization must be active before promotion.');
+    }
+    if (adminUser.role !== 'CONTROL_TOWER') {
+      const promoted = await db.users.update(adminUser.id, { role: 'CONTROL_TOWER' });
+      if (!promoted) throw new Error('[fleetgrid] primary admin promotion failed.');
+      console.log('[fleetgrid] configured primary administrator role for verified account.');
+    }
+  }
+
   server.listen(config.port, config.host, () => {
     console.log(`[fleetgrid] API      http://localhost:${config.port}`);
     console.log(`[fleetgrid] realtime ws://localhost:${config.port}/realtime`);
-    console.log(`[fleetgrid] data dir ${config.dataDir}`);
+    if (db.storage === 'json-file') console.log(`[fleetgrid] data dir ${config.dataDir}`);
   });
 
   const shutdown = async (signal: string) => {
     console.log(`\n[fleetgrid] ${signal} received, shutting down.`);
     await hub.close();
+    await db.close();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   };
@@ -129,7 +142,14 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
-main().catch((err) => {
-  console.error('[fleetgrid] failed to start:', err);
-  process.exit(1);
-});
+// Exporting createApp for integration tests must not also start a second listener.
+const invokedDirectly = process.argv[1]
+  ? pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+  : false;
+
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error('[fleetgrid] failed to start:', err);
+    process.exit(1);
+  });
+}

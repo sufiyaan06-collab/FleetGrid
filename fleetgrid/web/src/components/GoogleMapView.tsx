@@ -275,7 +275,7 @@ export function GoogleMapView({
           </div>
           <div style="font-size: 11px; line-height: 1.5; color: #334155;">
             <div><strong>Plate:</strong> ${truck.registrationNo}</div>
-            <div><strong>Corridor:</strong> ${truck.origin} &rarr; ${truck.destination}</div>
+            <div><strong>Corridor:</strong> ${truck.origin ?? 'Not recorded'} &rarr; ${truck.destination ?? 'Not recorded'}</div>
             <div><strong>Speed:</strong> ${speed} km/h (Heading ${heading}&deg;)</div>
             <div><strong>GPS:</strong> ${truck.lat.toFixed(4)}, ${truck.lng.toFixed(4)}</div>
             <div><strong>Available Capacity:</strong> ${truck.availableT}T / ${truck.capacityT}T</div>
@@ -416,7 +416,7 @@ export function GoogleMapView({
           <span className="relative inline-flex h-2 w-2 rounded-full bg-healthy" />
         </span>
         <span className="font-mono text-[10px] text-ink-300">
-          Google Maps Live Engine &bull; {trucks.length} Trucks Monitored
+          Fleet coordinate view &bull; {trucks.length} Trucks Shown
         </span>
         {shouldShowDetour && (
           <span className="ml-1 rounded bg-warn/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-warn border border-warn/40">

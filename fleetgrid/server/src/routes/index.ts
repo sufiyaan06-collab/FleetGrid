@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authRouter } from './auth.js';
+import { requireAuthenticated } from '../middleware/auth.js';
+import { requireTrustedOrigin } from '../middleware/trustedOrigin.js';
 import { capacityRouter } from './capacity.js';
 import { demoRouter } from './demo.js';
 import { driverRouter } from './driver.js';
@@ -18,6 +20,12 @@ export function buildRouter(): Router {
 
   router.use(healthRouter);
   router.use(authRouter);
+  // Payment router has its own auth guard, except for its signature-verified
+  // Dodo webhook, which must accept provider callbacks without a user cookie.
+  router.use(paymentsRouter);
+  // Every other operational API requires a trusted browser origin and an authenticated user session.
+  router.use(requireTrustedOrigin);
+  router.use(requireAuthenticated);
   router.use(miscRouter);
   router.use(trucksRouter);
   router.use(capacityRouter);
@@ -25,7 +33,6 @@ export function buildRouter(): Router {
   router.use(driverRouter);
   router.use(incidentsRouter);
   router.use(recoveryRouter);
-  router.use(paymentsRouter);
   router.use(eventsRouter);
   router.use(demoRouter);
   router.use(integrationsRouter);
@@ -38,7 +45,15 @@ export const ENDPOINT_INDEX = [
   { method: 'GET', path: '/health', purpose: 'Service health + counts' },
   { method: 'GET', path: '/state', purpose: 'Full read-only snapshot (client refetch target)' },
   { method: 'POST', path: '/auth/demo-login', purpose: 'Seeded demo role selection' },
-  { method: 'POST', path: '/auth/register', purpose: 'Register as BUSINESS or DRIVER (no password/token — demo scope)' },
+  { method: 'POST', path: '/auth/register', purpose: 'Legacy development-only demo registration (disabled in production)' },
+  { method: 'POST', path: '/auth/signup', purpose: 'Create a Shipper or Driver account and send email verification' },
+  { method: 'POST', path: '/auth/login', purpose: 'Sign in with verified email and password' },
+  { method: 'GET', path: '/auth/me', purpose: 'Restore the current authenticated session' },
+  { method: 'POST', path: '/auth/verify-email', purpose: 'Consume an email verification token after an explicit user action' },
+  { method: 'POST', path: '/auth/resend-verification', purpose: 'Resend an email verification link without revealing account existence' },
+  { method: 'POST', path: '/auth/forgot-password', purpose: 'Request a one-time password reset link' },
+  { method: 'POST', path: '/auth/reset-password', purpose: 'Set a new password and revoke existing sessions' },
+  { method: 'POST', path: '/auth/logout', purpose: 'Revoke the current session' },
   { method: 'POST', path: '/demo/reset', purpose: 'Restore deterministic demo state' },
   { method: 'GET', path: '/organizations', purpose: 'List organizations' },
   { method: 'POST', path: '/organizations', purpose: 'Create organization' },
@@ -72,9 +87,15 @@ export const ENDPOINT_INDEX = [
   { method: 'GET', path: '/events', purpose: 'Event log' },
   { method: 'POST', path: '/events', purpose: 'Append an event' },
   { method: 'GET', path: '/agent/tools', purpose: 'Agent tool contract + JSON Schema' },
-  { method: 'GET', path: '/payments', purpose: 'Payments placeholder read model' },
-  { method: 'POST', path: '/payments/create', purpose: 'Create payment intent (501 — Dodo not connected)' },
-  { method: 'POST', path: '/webhooks/dodo', purpose: 'Dodo payment webhook (501 — Dodo not connected)' },
+  { method: 'GET', path: '/payments', purpose: 'List payments visible to the signed-in account' },
+  { method: 'GET', path: '/payments/demo/status', purpose: 'Explicit DEMO_ONLY payment mode; no real money movement' },
+  { method: 'POST', path: '/payments/demo/checkout', purpose: 'Create a server-validated pending demo payment for an owned confirmed shipment' },
+  { method: 'POST', path: '/payments/demo/:id/settle', purpose: 'Explicitly simulate settlement; owner-scoped and idempotent, no external provider' },
+  { method: 'GET', path: '/payments/dodo/status', purpose: 'Deprecated and disabled; Dodo is not approved for FleetGrid shipment settlement' },
+  { method: 'POST', path: '/payments/dodo/checkout', purpose: 'Disabled; returns 410 and cannot initiate real payment' },
+  { method: 'POST', path: '/payments/dodo/confirm', purpose: 'Disabled browser confirmation endpoint; no Dodo shipment payments' },
+  { method: 'POST', path: '/payments/dodo/webhook', purpose: 'Disabled; no Dodo shipment settlement webhook processing' },
+
   { method: 'POST', path: '/proof/anchor', purpose: 'Anchor event hash on EVM testnet (501 — not configured)' },
   { method: 'GET', path: '/notifications', purpose: 'Notification placeholder read model' },
   { method: 'WS', path: '/realtime', purpose: 'Realtime state/events' },

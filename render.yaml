@@ -2,13 +2,16 @@
 # https://render.com/docs/blueprint-spec
 #
 # HOW TO DEPLOY ON RENDER:
-#   1. Go to https://dashboard.render.com
-#   2. Click "New +" → "Blueprint"
-#   3. Select your repository (fictiondharm/ember) and branch (feature/dodo-payments)
-#   4. Click "Apply" — Render will automatically build and deploy:
-#      - fleetgrid-app: The Full-Stack Node Web App (UI + Google Maps + API + WebSockets)
-#      - fleetgrid-backend: Python FastAPI backend (optional)
-#      - fleetgrid-db: PostgreSQL database (optional)
+#   1. Review the Blueprint plan before applying it to the existing production services.
+#   2. This Blueprint adopts the existing fleetgrid-app, fleetgrid-backend, and fleetgrid-db resources.
+#   3. No staging resources or paid resources are created.
+#   4. Keep auto-deploy disabled; deploy manually only after the database migration and smoke tests.
+#
+# Production database strategy:
+#   - Keep the existing Render PostgreSQL database fleetgrid-db.
+#   - Preserve its normalized legacy tables.
+#   - The Node app uses an additive fleetgrid_records JSONB table in the same database.
+#   - Do not enable FLEETGRID_POSTGRES_SCHEMA_READY until the additive schema and data import are reviewed.
 
 services:
   # ── 1. FleetGrid Full-Stack Production App (React + Express + WebSockets) ──
@@ -18,9 +21,9 @@ services:
     plan: free
     rootDir: .
     buildCommand: npm --prefix fleetgrid/web install && npm --prefix fleetgrid/web run build && npm --prefix fleetgrid/server install && npm --prefix fleetgrid/server run build
-    startCommand: cd fleetgrid/server && npm run serve
+    startCommand: cd fleetgrid/server && npm run import:legacy:apply && FLEETGRID_POSTGRES_SCHEMA_READY=true npm run serve
     healthCheckPath: /api
-    autoDeploy: true
+    autoDeploy: false
 
     envVars:
       - key: NODE_VERSION
@@ -29,19 +32,38 @@ services:
         value: 10000
       - key: HOST
         value: 0.0.0.0
+      - key: AUTO_SEED
+        value: "false"
+      - key: APP_BASE_URL
+        value: https://fleetgrid-app.onrender.com
       - key: CORS_ORIGIN
-        value: "*"
+        value: "https://ember-beryl-phi.vercel.app,https://fleetgrid-app.onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fleetgrid-db
+          property: connectionString
+      # Read-only legacy importer source; references the same existing Render database.
+      - key: LEGACY_DATABASE_URL
+        fromDatabase:
+          name: fleetgrid-db
+          property: connectionString
+      # Initial one-time import has completed. The importer verifies its ledger
+      # and is a no-op on restart; approval remains disabled for any first-time write.
+      - key: FLEETGRID_LEGACY_IMPORT_APPROVED
+        value: "false"
       - key: ELEVENLABS_VOICE_ID
         value: 21m00Tcm4TlvDq8ikWAM
 
-  # ── 2. FleetGrid Python Backend (FastAPI + GPS Simulations) ──────────────
+  # ── 2. FleetGrid Python Backend (legacy relational API; disabled in production) ──
   - type: web
     name: fleetgrid-backend
     runtime: python
     plan: free
+    autoDeploy: false
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # Do not run Alembic DDL automatically on production startup.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
 
     envVars:
@@ -51,8 +73,10 @@ services:
           property: connectionString
       - key: ENVIRONMENT
         value: production
+      - key: LEGACY_API_ENABLED
+        value: "false"
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://ember-beryl-phi.vercel.app,https://fleetgrid-app.onrender.com"
       - key: DB_POOL_SIZE
         value: "3"
       - key: DB_MAX_OVERFLOW

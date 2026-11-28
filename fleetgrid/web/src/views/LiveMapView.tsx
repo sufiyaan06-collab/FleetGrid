@@ -15,7 +15,7 @@ export function LiveMapView() {
   const selectedTruck = trucks.find((t: Truck) => t.id === selectedTruckId) ?? trucks[0] ?? null;
 
   const activeCount = trucks.filter(
-    (t: Truck) => t.status === 'IN_TRANSIT' || (t.speedKmph !== undefined && t.speedKmph > 0),
+    (t: Truck) => t.status === 'IN_TRANSIT' || (t.speedKmph != null && t.speedKmph > 0),
   ).length;
 
   const avgSpeed =
@@ -26,7 +26,7 @@ export function LiveMapView() {
       : 0;
 
   return (
-    <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-base-950 text-ink-100">
+    <div className="fg-live-map-shell relative flex h-screen flex-col overflow-hidden bg-base-950 text-ink-100">
       <AppHeader />
 
       {/* Main Workspace */}
@@ -37,13 +37,14 @@ export function LiveMapView() {
           <div className="border-b border-base-600 p-4">
             <div className="flex items-center justify-between">
               <span className="font-mono text-2xs font-semibold uppercase tracking-wider text-ink-400">
-                Live GPS Fleet
+                Fleet snapshot
               </span>
               <span className="flex items-center gap-1.5 rounded-full border border-healthy/40 bg-healthy/10 px-2 py-0.5 font-mono text-[10px] text-healthy">
                 <span className="h-1.5 w-1.5 rounded-full bg-healthy animate-pulse" />
-                {activeCount} Active
+                {activeCount} Moving
               </span>
             </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-ink-500">Positions update when a signed-in driver enables GPS sharing. Other vehicles may show their last saved coordinates.</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded border border-base-700 bg-base-850 p-2">
                 <div className="font-mono text-[9px] uppercase tracking-wider text-ink-500">Avg Speed</div>
@@ -81,7 +82,7 @@ export function LiveMapView() {
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-ink-400">
-                        {truck.origin} → {truck.destination}
+                        {truck.origin ?? 'Route not recorded'} → {truck.destination ?? 'Route not recorded'}
                       </div>
                     </div>
 
@@ -200,7 +201,7 @@ export function LiveMapView() {
                 <div>
                   <div className="text-ink-500">LANE</div>
                   <div className="mt-0.5 text-ink-200">
-                    {selectedTruck.origin} → {selectedTruck.destination}
+                    {selectedTruck.origin ?? 'Route not recorded'} → {selectedTruck.destination ?? 'Route not recorded'}
                   </div>
                 </div>
                 <div>
@@ -218,7 +219,7 @@ export function LiveMapView() {
                 <div>
                   <div className="text-ink-500">COORDINATES</div>
                   <div className="mt-0.5 text-ink-200">
-                    {selectedTruck.lat.toFixed(4)}, {selectedTruck.lng.toFixed(4)}
+                    {selectedTruck.lat != null ? selectedTruck.lat.toFixed(4) : '—'}, {selectedTruck.lng != null ? selectedTruck.lng.toFixed(4) : '—'}
                   </div>
                 </div>
               </div>

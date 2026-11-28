@@ -130,7 +130,7 @@ export interface DepartResult {
   shipments: Shipment[];
 }
 
-export async function departTruck(truckId: string, actorId?: string | null): Promise<DepartResult> {
+export async function departTruck(truckId: string, actorId?: string | null, actorType: 'DRIVER' | 'OPERATOR' = 'DRIVER'): Promise<DepartResult> {
   return runExclusive(async () => {
     const truck = await getTruck(truckId);
 
@@ -192,7 +192,7 @@ export async function departTruck(truckId: string, actorId?: string | null): Pro
         shipmentId: updated.id,
         truckId: updatedTruck.id,
         payload: { from: shipment.status, to: 'IN_TRANSIT' },
-        actorType: 'DRIVER',
+        actorType,
         actorId: actorId ?? truck.driverId,
       });
       hub.broadcast('shipment.updated', updated);

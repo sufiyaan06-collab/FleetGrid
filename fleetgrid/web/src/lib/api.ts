@@ -3,6 +3,7 @@ import type {
   CapacityOptions,
   CapacityMatch,
   DemoLoginResponse,
+  Driver,
   FleetSnapshot,
   Incident,
   Payment,
@@ -33,6 +34,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...init,
+      credentials: 'include',
       headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
     });
   } catch (err) {
@@ -74,6 +76,22 @@ export const api = {
   health: () => request<Record<string, unknown>>('/health'),
   state: () => request<FleetSnapshot>('/state'),
   demoLogin: (role: Role) => post<DemoLoginResponse>('/auth/demo-login', { role }),
+  login: (input: { email: string; password: string; expectedRole?: 'BUSINESS' | 'DRIVER' | 'CONTROL_TOWER' }) => post<DemoLoginResponse>('/auth/login', input),
+  me: () => request<{ ok: true; user: DemoLoginResponse['user']; organization: DemoLoginResponse['organization']; driver: DemoLoginResponse['driver']; email: string }>('/auth/me'),
+  logout: () => post<{ ok: true }>('/auth/logout'),
+  signup: (input: {
+    role: 'BUSINESS' | 'DRIVER';
+    name: string;
+    email: string;
+    password: string;
+    contact: string;
+    organizationName?: string;
+    truck?: { registrationNo: string; capacityT: number; origin: string; destination: string };
+  }) => post<{ ok: true; verificationRequired: true; message: string; email: string }>('/auth/signup', input),
+  verifyEmail: (token: string) => post<{ ok: true; message: string }>('/auth/verify-email', { token }),
+  resendVerification: (email: string) => post<{ ok: true; message: string }>('/auth/resend-verification', { email }),
+  forgotPassword: (email: string) => post<{ ok: true; message: string }>('/auth/forgot-password', { email }),
+  resetPassword: (token: string, password: string) => post<{ ok: true; message: string }>('/auth/reset-password', { token, password }),
 
   /**
    * Self-service onboarding. Returns the same `{ user, organization, driver }` shape
@@ -99,6 +117,10 @@ export const api = {
   resetDemo: () => post<{ ok: true; trucks: number; shipments: number }>('/demo/reset'),
 
   trucks: () => request<{ trucks: Truck[] }>('/trucks'),
+  updateTruckLocation: (id: string, input: { lat: number; lng: number; speedKmph?: number; heading?: number }) =>
+    post<{ status: string; truck_id: string; latitude: number; longitude: number; speed_kmph: number; heading: number }>(
+      `/trucks/${encodeURIComponent(id)}/location`, input,
+    ),
   truck: (id: string) => request<{ truck: Truck; shipments: Shipment[]; incidents: Incident[] }>(`/trucks/${id}`),
   depart: (id: string, driverId?: string) =>
     post<{ ok: true; truck: Truck; truckStatus: string; shipments: Shipment[] }>(
@@ -244,6 +266,8 @@ export const api = {
     post<{ ok: true; incident: Incident; truck: Truck; affectedShipments: Shipment[] }>('/incidents', input),
   incidents: () => request<{ incidents: Incident[] }>('/incidents'),
   incident: (id: string) => request<{ incident: Incident }>(`/incidents/${id}`),
+  confirmVehicleRepair: (incidentId: string) =>
+    post<{ ok: true; incident: Incident; truck: Truck; driver: Driver | null }>(`/incidents/${encodeURIComponent(incidentId)}/repair-confirmed`, {}),
 
   recoveryOptions: (incidentId: string) =>
     request<{
@@ -261,6 +285,8 @@ export const api = {
       '/recovery-plans',
       { incidentId },
     ),
+  acceptRecoveryPlan: (planId: string) =>
+    post<{ ok: true; plan: RecoveryPlan }>(`/driver/recovery-plans/${encodeURIComponent(planId)}/accept`, {}),
   approvePlan: (planId: string, approvedBy: string) =>
     post<{ ok: true; plan: RecoveryPlan }>(`/recovery-plans/${planId}/approve`, { approvedBy }),
   executePlan: (planId: string, executedBy: string) =>
@@ -274,33 +300,12 @@ export const api = {
   recordEvent: (input: { eventType: string; shipmentId?: string; payload?: Record<string, unknown> }) =>
     post<{ ok: true; event: ShipmentEvent }>('/events', input),
 
-  // Dodo Payments Integrations
-  createDodoCheckout: (input: {
-    shipmentId?: string | null;
-    recoveryPlanId?: string | null;
-    amount: number;
-    currency?: string;
-    customerName?: string;
-    customerEmail?: string;
-    returnUrl?: string;
-  }) =>
-    post<{
-      payment: Payment;
-      checkoutUrl: string;
-      isSandbox: boolean;
-      provider: string;
-    }>('/payments/dodo/checkout', input),
-
-  confirmDodoPayment: (input: {
-    paymentId: string;
-    providerReference?: string;
-    paymentMethod?: string;
-  }) =>
-    post<{
-      status: string;
-      payment: Payment;
-      shipment: Shipment | null;
-    }>('/payments/dodo/confirm', input),
+  // Demo payment simulator. No external gateway and no real money movement.
+  demoPaymentStatus: () => request<{ provider: string; mode: 'DEMO_ONLY'; realMoney: false; ready: boolean }>('/payments/demo/status'),
+  createDemoPayment: (input: { shipmentId: string }) =>
+    post<{ payment: Payment; mode: 'DEMO_ONLY'; realMoney: false }>('/payments/demo/checkout', input),
+  settleDemoPayment: (paymentId: string) =>
+    post<{ payment: Payment; mode: 'DEMO_ONLY'; realMoney: false }>(`/payments/demo/${encodeURIComponent(paymentId)}/settle`, {}),
 
   payments: () => request<{ payments: Payment[] }>('/payments'),
   payment: (id: string) => request<{ payment: Payment }>(`/payments/${id}`),

@@ -1,122 +1,124 @@
 # FleetGrid
 
-**AI-powered self-healing logistics network + controlled shared-capacity network**
-EmberGround AI Hackathon 2026 — Bharat Infra track (logistics / transport / supply chains)
+**FleetGrid — AI-assisted freight operations and shared-capacity logistics platform**
 
-Built with **FastAPI · PostgreSQL (Render) / SQLite · SQLAlchemy 2.0 · Alembic · WebSockets · React + Vite · Google Maps**.
+A final-year engineering project demonstrating a connected shipper, driver, and operations workflow: discover spare freight capacity, reserve and track shipments, coordinate incidents, and preserve operational events in an auditable backend.
 
----
+## Main application
 
-## What FleetGrid Does
+The primary user-facing application lives in `fleetgrid/`:
 
-1. **Uses empty space.** A truck travelling with spare capacity publishes compatible capacity; a business finds it, reserves it, pays, and the shipment moves.
-2. **Heals the network.** A breakdown is reported (voice or text), the agent identifies the affected shipment, finds replacement capacity, produces a structured recovery plan, a human approves it, and recovery executes with full event proof.
-3. **Visualizes live telemetry.** Live GPS telemetry streams via WebSockets into an interactive Google Maps layer with heading-oriented truck markers along the Bengaluru → Hosur → Krishnagiri → Vellore → Chennai freight corridor.
+- **React + Vite** responsive web interface.
+- **Node.js + Express** authoritative REST API and WebSocket updates.
+- **PostgreSQL JSONB collection store** for the Node domain model.
+- **Real authentication** with password hashing, server-side sessions, email verification, rate limiting, and password reset.
+- **Business / Shipper portal** for capacity search, shipment creation, and tracking.
+- **Driver portal** for assigned work, acceptance, journey updates, and incident reporting.
+- **Control Tower** for network visibility, incident review, and recovery workflows.
+- **Payments Hub** with a clearly labelled server-controlled demo simulator.
 
----
+The Python FastAPI service in `backend/` remains a separate auxiliary/legacy service, not the authentication authority for the primary React/Node application. The integration-branch Render blueprint disables it in production by default (only root and health endpoints remain available) and removes automatic Alembic startup migrations. These are candidate settings; the live Render service still tracks `main` and has not received this update.
 
-## Architecture Overview
+## Payment demonstration
+
+The Payments Hub is intentionally **DEMO ONLY** for this academic project:
+
+1. A shipper selects one of their own driver-confirmed shipments.
+2. FleetGrid creates a pending payment record using the shipment's server-stored agreed amount.
+3. The shipper explicitly selects **Simulate successful demo payment**.
+4. The server validates ownership and payment state, then records the simulated settlement and audit event.
+
+No bank, card network, wallet, or payment provider is contacted. No money moves. The record is not a tax invoice or proof of a real-world settlement. Dodo shipment-payment endpoints are disabled.
+
+## Architecture
 
 ```text
-                 +---------------------------------------------+
-                 |              React / Vite UI                |
-                 | (Control Tower · Driver · Business · Maps)  |
-                 +----------------------+----------------------+
-                                        | REST / WS
-                                        v
-                 +---------------------------------------------+
-                 |              FastAPI Backend                |
-                 |  State Machines · Recovery Agent · Auth     |
-                 +----------------------+----------------------+
-                                        |
-                 +----------------------+----------------------+
-                 |          PostgreSQL (Render) / SQLite       |
-                 |         SQLAlchemy 2.0 + Alembic Migrations |
-                 +---------------------------------------------+
+React + Vite web application
+          |
+          | REST + WebSocket
+          v
+Node.js / Express API
+  - authentication and roles
+  - shipper / driver / operations workflows
+  - incident and recovery state machines
+  - demo payment simulator
+          |
+          v
+PostgreSQL JSONB collections
+          |
+          +---- optional Python FastAPI service
+                (legacy / auxiliary workflows)
 ```
 
----
+## Local development
 
-## Quickstart
+Requires Node.js 20+.
 
-### 1. Authoritative Backend (FastAPI + PostgreSQL / SQLite)
-
-Requires Python 3.11+:
+From the repository root:
 
 ```bash
-cd backend
+# Install/build the frontend and backend dependencies and compile both
+npm run build
 
-# Install dependencies
-pip install -r requirements.txt
+# Start the Node API (default http://localhost:4000)
+npm run dev --prefix fleetgrid/server
 
-# Run migrations (defaults to local SQLite if DATABASE_URL is not set)
-alembic upgrade head
-
-# Seed deterministic demo state
-python setup_db.py --seed
-
-# Start the backend server
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# In a second terminal, start the web UI (default http://localhost:5173)
+npm run dev --prefix fleetgrid/web
 ```
 
-* **Health Check**: `http://localhost:8000/health`
-* **Interactive Docs**: `http://localhost:8000/docs`
-* **Locations API**: `http://localhost:8000/trucks/locations`
-* **Live WebSocket**: `ws://localhost:8000/ws/tracking`
+In local development, if `DATABASE_URL` is not set, the API uses JSON files under `fleetgrid/server/data` and can seed deterministic demo data. This fallback is for local development and automated tests only; production refuses to start with JSON-file storage.
 
-#### Run Tests
+For local demo role access, use the development-only demo login flow. It is disabled in production. Do not use seeded demo identities as real user accounts.
+
+## Authentication email configuration
+
+Self-service signup supports `BUSINESS` and `DRIVER` accounts. Production signup requires a verified Resend sender and these server-side environment variables:
+
+- `RESEND_API_KEY`
+- `EMAIL_FROM`
+- `APP_BASE_URL`
+
+Email verification is required before sign-in. If email delivery is not configured, signup fails clearly instead of pretending that an email was sent. Operations roles are provisioned separately by an administrator; they cannot self-register.
+
+See [account and storage setup](fleetgrid/server/ACCOUNT_SETUP.md).
+
+## Production storage and migration safety
+
+Production is configured to stay on the existing Render PostgreSQL database:
+
+- `DATABASE_URL` is required in production.
+- `FLEETGRID_POSTGRES_SCHEMA_READY=true` is required before the Node app initializes its JSONB table and indexes.
+- Keep `AUTO_SEED=false`; deterministic demo records must not be inserted into production.
+- The additive legacy import completed on 2026-11-24: 12 source rows were reviewed, 11 compatible records were imported, and 1 AUDITOR user without an organization was quarantined. The original normalized tables remain untouched.
+- `import:legacy:dry-run` reads the legacy tables in a read-only transaction and prints only aggregate counts, schema metadata, and redacted issue codes.
+- `import:legacy:apply` is a separate one-time, approval-gated operation. It writes mapped records only to `fleetgrid_records` and a metadata-only ledger in the same Render database. It refuses a non-empty target on first run, verifies the ledger and becomes a no-op on later restarts, and never updates or deletes legacy rows.
+- The current Render Free PostgreSQL database expires on **2026-12-15**. It can support the near-term project demonstration, but it is not durable long-term production storage. No paid resource has been created.
+
+The JSON-to-PostgreSQL script migrates Node JSON collections only; it is not the legacy relational importer. The production legacy import is complete and verified against the import ledger and target row counts. Legacy user credentials/sessions were not migrated; existing users must establish new credentials through the credential-auth flow. See:
+
+- [Database compatibility decisions](fleetgrid/DATABASE_COMPATIBILITY_DECISIONS_2026-11-23.md)
+- [Legacy database migration plan](fleetgrid/LEGACY_DATABASE_MIGRATION_PLAN.md)
+- [Legacy importer guide](fleetgrid/LEGACY_IMPORTER_README.md)
+- [Dodo deprecation notice](fleetgrid/DODO_PAYMENTS_SETUP.md)
+
+## Tests
+
+From the repository root:
+
 ```bash
-cd backend
-python -m pytest tests/ -v
+# Build frontend and backend
+npm run build
+
+# Backend integration and safety tests
+npm test --prefix fleetgrid/server
+
+# Browser integration tests (Playwright)
+npm run test:e2e --prefix fleetgrid/web
 ```
 
----
+The GitHub Actions workflow runs the frontend/backend build, backend integration tests, and Playwright browser tests for the production and integration branches.
 
-### 2. Frontend Dashboards
+## Deployment status
 
-#### A. FleetGrid Multi-Role Web Dashboard (`fleetgrid/web`)
-```bash
-cd fleetgrid/web
-npm install
-npm run dev
-# Open http://localhost:5173
-```
-
-#### B. Live Google Maps Telemetry Tracking (`frontend`)
-```bash
-cd frontend
-npm install
-npm run dev
-# Open http://localhost:5173
-```
-
-#### C. Run Live Corridor Telemetry Simulator (Dev Only)
-```bash
-python backend/scripts/simulate_truck_locations.py --interval 2.5
-```
-
----
-
-## Render Deployment (PostgreSQL + Web Service)
-
-Deploy the authoritative backend to Render using the included `render.yaml` blueprint:
-
-1. In Render Dashboard: **New → Blueprint**
-2. Connect this repository
-3. Render automatically creates:
-   * **`fleetgrid-db`**: Render Managed PostgreSQL
-   * **`fleetgrid-backend`**: Python Web Service with automatic migration on start (`alembic upgrade head && uvicorn app.main:app`)
-
----
-
-## Golden Demo Scenario
-
-The seeded scenario models the Bengaluru → Hosur → Krishnagiri → Vellore → Chennai freight corridor:
-
-| Truck | Status | Capacity | Spare | Route |
-|:---|:---|:---|:---|:---|
-| **FG-027** | AVAILABLE / IN_TRANSIT | 10.0T | 3.8T | Bengaluru → Chennai |
-| **FG-041** | AVAILABLE (Recovery) | 6.0T | 3.1T | Hosur → Chennai |
-| **FG-052** | AVAILABLE (Recovery) | 10.0T | 5.0T | Attibele → Chennai |
-
-Demo login endpoint: `POST /auth/demo-login` with `{"role": "OPERATOR"}` (or `SHIPPER`, `DRIVER`, `AUDITOR`).
+The Render Node service is live on the integration release branch, uses the existing Render PostgreSQL database, and has automatic deploys disabled. The original normalized tables were preserved. The database is on a time-limited Free plan expiring 2026-12-15; select a durable plan or migrate before expiry. Email delivery still requires a verified Resend sender and production secrets. Do not merge or push to `main` until email configuration and production cutover checks are approved.
