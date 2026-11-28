@@ -28,8 +28,8 @@ healthRouter.get(
         persistentStorage: db.storage === 'postgresql',
         postgresSchemaApproved: process.env.FLEETGRID_POSTGRES_SCHEMA_READY === 'true',
         emailDelivery: Boolean(
-          process.env.RESEND_API_KEY?.trim()
-          && process.env.EMAIL_FROM?.trim()
+          ((process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim())
+            || (process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim()))
           && process.env.APP_BASE_URL?.trim(),
         ),
       },
