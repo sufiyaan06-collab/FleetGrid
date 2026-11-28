@@ -177,7 +177,7 @@ export async function sendPasswordResetEmail(email: string, token: string): Prom
     throw new ApiError(503, 'EMAIL_CONFIGURATION_INVALID', 'APP_BASE_URL must be a valid absolute URL.');
   }
   await sendEmail({
-    from: process.env.EMAIL_FROM?.trim() || process.env.SMTP_USER!.trim(),
+    from: smtpConfigured() ? process.env.SMTP_USER!.trim() : process.env.EMAIL_FROM!.trim(),
     to: email,
     subject: 'Reset your FleetGrid password',
     text: [`Reset your FleetGrid password by opening this link: ${url.toString()}`, '', 'This link expires in 1 hour. If you did not request this, ignore this email.'].join('\\n'),
