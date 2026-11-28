@@ -75,7 +75,7 @@ async function sendWithGmailSmtp(message: MailMessage): Promise<void> {
   const host = process.env.SMTP_HOST?.trim() || 'smtp.gmail.com';
   const port = Number(process.env.SMTP_PORT || 465);
   const username = process.env.SMTP_USER?.trim();
-  const password = process.env.SMTP_PASS?.replace(/\\s/g, '');
+  const password = process.env.SMTP_PASS?.replace(/\s/g, '');
   if (!username || !password || host !== 'smtp.gmail.com' || port !== 465) {
     throw new ApiError(503, 'EMAIL_PROVIDER_NOT_CONFIGURED', 'Gmail SMTP requires smtp.gmail.com on port 465 with SMTP_USER and SMTP_PASS.');
   }
@@ -88,12 +88,12 @@ async function sendWithGmailSmtp(message: MailMessage): Promise<void> {
   const waiters: Array<(value: string) => void> = [];
   socket.on('data', (chunk: string) => {
     incoming += chunk;
-    const lines = incoming.split('\\r\\n');
+    const lines = incoming.split('\r\n');
     incoming = lines.pop() ?? '';
     for (const line of lines) {
       responseLines.push(line);
       if (/^\\d{3} /.test(line)) {
-        const response = responseLines.join('\\n');
+        const response = responseLines.join('\n');
         responseLines = [];
         const waiter = waiters.shift();
         if (waiter) waiter(response); else responses.push(response);
@@ -107,7 +107,7 @@ async function sendWithGmailSmtp(message: MailMessage): Promise<void> {
     socket.once('error', reject);
   });
   const command = async (value: string, expected: number) => {
-    socket.write(value + '\\r\\n');
+    socket.write(value + '\r\n');
     const response = await readResponse();
     if (!response.startsWith(String(expected))) throw new Error('SMTP command rejected');
   };
@@ -126,7 +126,7 @@ async function sendWithGmailSmtp(message: MailMessage): Promise<void> {
     await command(`MAIL FROM:<${sender}>`, 250);
     await command(`RCPT TO:<${message.to}>`, 250);
     await command('DATA', 354);
-    const clean = (value: string) => value.replace(/[\\r\\n]+/g, ' ').trim();
+    const clean = (value: string) => value.replace(/[\r\n]+/g, ' ').trim();
     const body = [
       `From: FleetGrid <${sender}>`,
       `To: <${message.to}>`,
@@ -135,11 +135,11 @@ async function sendWithGmailSmtp(message: MailMessage): Promise<void> {
       'Content-Type: text/plain; charset=UTF-8',
       'Content-Transfer-Encoding: 8bit',
       '',
-      message.text.replace(/\\r?\\n/g, '\\r\\n').replace(/^\\./gm, '..'),
-    ].join('\\r\\n');
-    socket.write(body + '\\r\\n.\\r\\n');
+      message.text.replace(/\r?\n/g, '\r\n').replace(/^\\./gm, '..'),
+    ].join('\r\n');
+    socket.write(body + '\r\n.\r\n');
     if (!(await readResponse()).startsWith('250')) throw new Error('SMTP message rejected');
-    socket.write('QUIT\\r\\n');
+    socket.write('QUIT\r\n');
   } catch {
     throw new ApiError(502, 'EMAIL_DELIVERY_FAILED', 'Gmail could not send this email. Check the Gmail app password and SMTP settings in Render.');
   } finally {
@@ -180,7 +180,7 @@ export async function sendPasswordResetEmail(email: string, token: string): Prom
     from: smtpConfigured() ? process.env.SMTP_USER!.trim() : process.env.EMAIL_FROM!.trim(),
     to: email,
     subject: 'Reset your FleetGrid password',
-    text: [`Reset your FleetGrid password by opening this link: ${url.toString()}`, '', 'This link expires in 1 hour. If you did not request this, ignore this email.'].join('\\n'),
+    text: [`Reset your FleetGrid password by opening this link: ${url.toString()}`, '', 'This link expires in 1 hour. If you did not request this, ignore this email.'].join('\n'),
   });
 }
 
@@ -220,6 +220,6 @@ export async function sendVerificationEmail(email: string, token: string): Promi
     from: process.env.EMAIL_FROM?.trim() || process.env.SMTP_USER!.trim(),
     to: email,
     subject: 'Verify your FleetGrid email',
-    text: `Verify your FleetGrid account by opening this link: ${url.toString()}\\n\\nThis link expires in 24 hours. If you did not create this account, ignore this email.`,
+    text: `Verify your FleetGrid account by opening this link: ${url.toString()}\n\nThis link expires in 24 hours. If you did not create this account, ignore this email.`,
   });
 }
