@@ -217,7 +217,7 @@ export async function sendVerificationEmail(email: string, token: string): Promi
     throw new ApiError(503, 'EMAIL_CONFIGURATION_INVALID', 'APP_BASE_URL must be a valid absolute URL.');
   }
   await sendEmail({
-    from: process.env.EMAIL_FROM?.trim() || process.env.SMTP_USER!.trim(),
+    from: smtpConfigured() ? process.env.SMTP_USER!.trim() : process.env.EMAIL_FROM!.trim(),
     to: email,
     subject: 'Verify your FleetGrid email',
     text: `Verify your FleetGrid account by opening this link: ${url.toString()}\n\nThis link expires in 24 hours. If you did not create this account, ignore this email.`,
